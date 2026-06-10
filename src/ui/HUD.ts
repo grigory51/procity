@@ -108,7 +108,7 @@ export class HUD {
   ): void {
     const panel = document.createElement('div')
     panel.style.cssText = [
-      'position:fixed', 'top:16px', 'right:16px',
+      'position:fixed', 'top:230px', 'right:16px',
       'color:#fff', 'font-family:monospace', 'font-size:12px',
       'background:rgba(0,0,0,0.6)', 'padding:8px 12px',
       'border-radius:4px', 'line-height:1.6',
