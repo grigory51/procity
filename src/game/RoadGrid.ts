@@ -96,9 +96,13 @@ export class RoadGrid {
     )
     if (!pick.hit || !pick.pickedPoint) return
     const { x, z } = this.gridMap.worldToCell(pick.pickedPoint.x, pick.pickedPoint.z)
-    if (this.gridMap.get(x, z) === CellType.ROAD) return
-    this.gridMap.set(x, z, CellType.ROAD)
-    this.spawnRoadMesh(x, z)
+    this.placeRoadAt(x, z)
+  }
+
+  private placeRoadAt(cx: number, cz: number): void {
+    if (this.gridMap.get(cx, cz) !== CellType.EMPTY) return
+    this.gridMap.set(cx, cz, CellType.ROAD)
+    this.spawnRoadMesh(cx, cz)
   }
 
   private spawnRoadMesh(cx: number, cz: number): void {
