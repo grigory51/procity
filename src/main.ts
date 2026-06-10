@@ -1,7 +1,7 @@
 import { GameEngine } from './engine'
-import { DemoScene, RoadGrid } from './game'
+import { DemoScene, RoadGrid, ZoneManager } from './game'
 import { GridMap } from './simulation'
-import { HUD, ZoningToolbar } from './ui'
+import { HUD, MiniMap, ZoningToolbar } from './ui'
 
 async function main(): Promise<void> {
   const canvas = document.getElementById('canvas') as HTMLCanvasElement
@@ -11,20 +11,33 @@ async function main(): Promise<void> {
   const scene = new DemoScene(engine.scene)
   const gridMap = new GridMap()
   const roadGrid = new RoadGrid(engine.scene, scene.camera, gridMap, scene.ground)
+  const zoneManager = new ZoneManager(engine.scene, scene.camera, gridMap, scene.ground)
 
   const hud = new HUD()
   const toolbar = new ZoningToolbar()
+  const miniMap = new MiniMap(gridMap, scene.camera)
 
   toolbar.onChange(tool => {
     if (tool === 'road') {
+      zoneManager.setTool(null)
       roadGrid.activate()
+    } else if (
+      tool === 'residential' ||
+      tool === 'commercial' ||
+      tool === 'industrial' ||
+      tool === 'demolish'
+    ) {
+      roadGrid.deactivate()
+      zoneManager.setTool(tool)
     } else {
       roadGrid.deactivate()
+      zoneManager.setTool(null)
     }
   })
 
   engine.start(() => {
     hud.update(engine.engine.getFps())
+    miniMap.update()
   })
 }
 

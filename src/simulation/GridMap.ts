@@ -1,6 +1,9 @@
 export enum CellType {
   EMPTY = 0,
   ROAD = 1,
+  ZONE_RESIDENTIAL = 2,
+  ZONE_COMMERCIAL = 3,
+  ZONE_INDUSTRIAL = 4,
 }
 
 const GRID_SIZE = 200
@@ -12,9 +15,14 @@ export class GridMap {
   readonly height = GRID_SIZE
   readonly cellSize = CELL_SIZE
   private cells: Uint8Array
+  private _version = 0
 
   constructor() {
     this.cells = new Uint8Array(GRID_SIZE * GRID_SIZE)
+  }
+
+  get version(): number {
+    return this._version
   }
 
   get(x: number, z: number): CellType {
@@ -25,6 +33,7 @@ export class GridMap {
   set(x: number, z: number, type: CellType): boolean {
     if (this.outOfBounds(x, z)) return false
     this.cells[z * this.width + x] = type
+    this._version++
     return true
   }
 

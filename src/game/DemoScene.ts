@@ -9,7 +9,6 @@ import {
   Vector3,
 } from '@babylonjs/core'
 import { GridMaterial } from '@babylonjs/materials'
-import { BuildingSystem } from './BuildingSystem'
 
 export class DemoScene {
   readonly camera: ArcRotateCamera
@@ -61,7 +60,5 @@ export class DemoScene {
     gridMat.mainColor = new Color3(0.08, 0.10, 0.13)
     gridMat.lineColor = new Color3(0.28, 0.38, 0.50)
     this.ground.material = gridMat
-
-    new BuildingSystem(scene)
   }
 }

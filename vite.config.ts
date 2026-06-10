@@ -1,6 +1,10 @@
 import { defineConfig } from 'vite'
 
 export default defineConfig({
+  test: {
+    environment: 'node',
+    globals: true,
+  },
   build: {
     target: 'es2020',
     outDir: 'dist',

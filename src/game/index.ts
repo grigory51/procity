@@ -1,3 +1,5 @@
 export { DemoScene } from './DemoScene'
 export { BuildingSystem, ZoneType } from './BuildingSystem'
 export { RoadGrid } from './RoadGrid'
+export { ZoneManager } from './ZoneManager'
+export type { ZoneTool } from './ZoneManager'

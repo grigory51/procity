@@ -5,33 +5,33 @@ import {
   Scene,
   StandardMaterial,
   Vector3,
+  type InstancedMesh,
 } from '@babylonjs/core'
 
-export const enum ZoneType {
+export enum ZoneType {
   Residential = 0,
   Commercial = 1,
   Industrial = 2,
 }
 
-// Colors: Residential=blue, Commercial=green, Industrial=yellow
+// Height range [min, max] in world units (≈10m per unit at game scale)
+const ZONE_HEIGHT_RANGE: [number, number][] = [
+  [0.8, 2.5],   // Residential
+  [1.5, 6.0],   // Commercial
+  [0.4, 1.2],   // Industrial
+]
+
+// Footprint range [min, max] — fits within 1-unit cell
+const ZONE_FOOTPRINT_RANGE: [number, number][] = [
+  [0.50, 0.75],
+  [0.45, 0.65],
+  [0.65, 0.88],
+]
+
 const ZONE_COLORS: Color3[] = [
   new Color3(0.18, 0.42, 0.92),
   new Color3(0.12, 0.80, 0.28),
   new Color3(0.95, 0.78, 0.08),
-]
-
-// [minHeight, maxHeight] per zone type
-const ZONE_HEIGHT_RANGE: [number, number][] = [
-  [4, 16],   // Residential
-  [12, 40],  // Commercial
-  [3, 9],    // Industrial
-]
-
-// [minFootprint, maxFootprint] per zone type
-const ZONE_FOOTPRINT_RANGE: [number, number][] = [
-  [1.5, 2.5],
-  [2.0, 3.5],
-  [3.5, 5.5],
 ]
 
 // Knuth LCG — deterministic, seed-reproducible
@@ -47,22 +47,10 @@ function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t
 }
 
-const BUILDING_COUNT = 100
-const GRID_COLS = 10
-const GRID_ROWS = 10
-const CELL_SPACING = 8  // world units between building centres
-
 export class BuildingSystem {
   private templates: Mesh[] = []
 
   constructor(scene: Scene) {
-    this.build(scene)
-  }
-
-  private build(scene: Scene): void {
-    const rng = lcg(42)  // fixed seed → deterministic geometry
-
-    // One unit-cube template per zone type; invisible, instances take the visual role
     this.templates = ZONE_COLORS.map((color, i) => {
       const mat = new StandardMaterial(`zoneMat${i}`, scene)
       mat.diffuseColor = color
@@ -70,46 +58,22 @@ export class BuildingSystem {
 
       const mesh = MeshBuilder.CreateBox(`zoneTemplate${i}`, { size: 1 }, scene)
       mesh.material = mat
-      mesh.isVisible = false  // template is a draw-call source only
+      mesh.isVisible = false  // template is a draw-call source only; instances carry the visual
       return mesh
     })
+  }
 
-    // Zone assignment: 40 residential, 35 commercial, 25 industrial, then shuffle
-    const assignments = new Array<ZoneType>(BUILDING_COUNT)
-    const counts: [ZoneType, number][] = [
-      [ZoneType.Residential, 40],
-      [ZoneType.Commercial, 35],
-      [ZoneType.Industrial, 25],
-    ]
-    let cursor = 0
-    for (const [zone, n] of counts) {
-      for (let k = 0; k < n; k++) assignments[cursor++] = zone
-    }
-    // Fisher-Yates with seeded rng
-    for (let i = assignments.length - 1; i > 0; i--) {
-      const j = Math.floor(rng() * (i + 1))
-      ;[assignments[i], assignments[j]] = [assignments[j], assignments[i]]
-    }
+  /** Spawn a building instance at worldX/worldZ for a grid cell. Geometry is deterministic via cell coords. */
+  spawnAt(cx: number, cz: number, zone: ZoneType, worldX: number, worldZ: number): InstancedMesh {
+    const seed = (cx * 31337 + cz * 7919) >>> 0
+    const rng = lcg(seed)
+    const height = lerp(ZONE_HEIGHT_RANGE[zone][0], ZONE_HEIGHT_RANGE[zone][1], rng())
+    const footprint = lerp(ZONE_FOOTPRINT_RANGE[zone][0], ZONE_FOOTPRINT_RANGE[zone][1], rng())
 
-    const halfGrid = ((GRID_COLS - 1) * CELL_SPACING) / 2
-
-    for (let row = 0; row < GRID_ROWS; row++) {
-      for (let col = 0; col < GRID_COLS; col++) {
-        const idx = row * GRID_COLS + col
-        const zone = assignments[idx]
-
-        const height = lerp(ZONE_HEIGHT_RANGE[zone][0], ZONE_HEIGHT_RANGE[zone][1], rng())
-        const footprint = lerp(ZONE_FOOTPRINT_RANGE[zone][0], ZONE_FOOTPRINT_RANGE[zone][1], rng())
-
-        const inst = this.templates[zone].createInstance(`bld_${idx}`)
-        inst.position = new Vector3(
-          col * CELL_SPACING - halfGrid,
-          height / 2,  // raise so base sits on y=0 ground plane
-          row * CELL_SPACING - halfGrid,
-        )
-        inst.scaling = new Vector3(footprint, height, footprint)
-      }
-    }
+    const inst = this.templates[zone].createInstance(`bld_${cx}_${cz}`)
+    inst.position = new Vector3(worldX, height / 2, worldZ)
+    inst.scaling = new Vector3(footprint, height, footprint)
+    return inst
   }
 
   dispose(): void {
