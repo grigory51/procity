@@ -1,5 +1,6 @@
 import { GameEngine } from './engine'
-import { DemoScene } from './game'
+import { DemoScene, RoadGrid } from './game'
+import { GridMap } from './simulation'
 import { HUD, ZoningToolbar } from './ui'
 
 async function main(): Promise<void> {
@@ -7,13 +8,19 @@ async function main(): Promise<void> {
   if (!canvas) throw new Error('Canvas element not found')
 
   const engine = await GameEngine.create(canvas)
-  new DemoScene(engine.scene)
+  const scene = new DemoScene(engine.scene)
+  const gridMap = new GridMap()
+  const roadGrid = new RoadGrid(engine.scene, scene.camera, gridMap, scene.ground)
 
   const hud = new HUD()
   const toolbar = new ZoningToolbar()
 
   toolbar.onChange(tool => {
-    console.log('[ZoningToolbar] active tool:', tool)
+    if (tool === 'road') {
+      roadGrid.activate()
+    } else {
+      roadGrid.deactivate()
+    }
   })
 
   engine.start(() => {
