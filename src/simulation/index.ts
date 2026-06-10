@@ -1,3 +1,5 @@
 export { GridMap, CellType } from './GridMap'
 export { RoadGraph } from './RoadGraph'
 export type { PathNode } from './RoadGraph'
+export { EconomyManager, TAX_CYCLE_SECONDS } from './EconomyManager'
+export type { FiscalState, TaxRates, TaxReceipt } from './EconomyManager'

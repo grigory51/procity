@@ -1,6 +1,6 @@
 import { GameEngine } from './engine'
 import { DemoScene, RoadGrid, ZoneManager } from './game'
-import { GridMap } from './simulation'
+import { GridMap, EconomyManager } from './simulation'
 import { HUD, MiniMap, ZoningToolbar } from './ui'
 
 async function main(): Promise<void> {
@@ -12,10 +12,25 @@ async function main(): Promise<void> {
   const gridMap = new GridMap()
   const roadGrid = new RoadGrid(engine.scene, scene.camera, gridMap, scene.ground)
   const zoneManager = new ZoneManager(engine.scene, scene.camera, gridMap, scene.ground)
+  const economy = new EconomyManager(gridMap)
 
   const hud = new HUD()
   const toolbar = new ZoningToolbar()
   const miniMap = new MiniMap(gridMap, scene.camera)
+
+  economy.onBankruptcy(() => {
+    hud.showNotification('⚠ CITY BANKRUPT! Build more zones to generate income.', 8_000)
+  })
+
+  economy.onTaxCycle((receipt) => {
+    hud.updateEconomy(
+      receipt.balance,
+      receipt.income,
+      receipt.expenses,
+      receipt.state,
+      economy.secondsUntilCycle,
+    )
+  })
 
   toolbar.onChange(tool => {
     if (tool === 'road') {
@@ -36,7 +51,16 @@ async function main(): Promise<void> {
   })
 
   engine.start(() => {
+    const deltaSeconds = engine.engine.getDeltaTime() / 1_000
+    economy.tick(deltaSeconds)
     hud.update(engine.engine.getFps())
+    hud.updateEconomy(
+      economy.balance,
+      economy.lastIncome,
+      economy.lastExpenses,
+      economy.fiscalState,
+      economy.secondsUntilCycle,
+    )
     miniMap.update()
   })
 }
