@@ -1,4 +1,5 @@
 export { HUD } from './HUD'
 export { MiniMap } from './MiniMap'
+export { StatsPanel } from './StatsPanel'
 export { ZoningToolbar } from './ZoningToolbar'
 export type { ZoneType } from './ZoningToolbar'

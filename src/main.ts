@@ -1,7 +1,7 @@
 import { GameEngine } from './engine'
 import { DemoScene, RoadGrid, ZoneManager, CitizenManager } from './game'
 import { GridMap, RoadGraph, EconomyManager } from './simulation'
-import { HUD, MiniMap, ZoningToolbar } from './ui'
+import { HUD, MiniMap, StatsPanel, ZoningToolbar } from './ui'
 
 async function main(): Promise<void> {
   const canvas = document.getElementById('canvas') as HTMLCanvasElement
@@ -19,6 +19,7 @@ async function main(): Promise<void> {
   const hud = new HUD()
   const toolbar = new ZoningToolbar()
   const miniMap = new MiniMap(gridMap, scene.camera)
+  const statsPanel = new StatsPanel()
 
   economy.onBankruptcy(() => {
     hud.showNotification('⚠ CITY BANKRUPT! Build more zones to generate income.', 8_000)
@@ -65,6 +66,13 @@ async function main(): Promise<void> {
       economy.secondsUntilCycle,
     )
     miniMap.update()
+    statsPanel.push(
+      citizens.count,
+      economy.balance,
+      economy.lastIncome,
+      economy.lastExpenses,
+      economy.fiscalState,
+    )
   })
 }
 
