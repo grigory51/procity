@@ -1,0 +1,25 @@
+{
+  "name": "cities-skylines-browser",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && node --max-old-space-size=3072 node_modules/.bin/vite build",
+    "preview": "vite preview",
+    "lint": "eslint src --report-unused-disable-directives --max-warnings 0",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@babylonjs/core": "^7.0.0",
+    "@babylonjs/loaders": "^7.0.0",
+    "@babylonjs/materials": "^7.0.0"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.2.0"
+  }
+}
