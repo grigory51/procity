@@ -1,6 +1,6 @@
 import { GameEngine } from './engine'
-import { DemoScene, RoadGrid, ZoneManager } from './game'
-import { GridMap, EconomyManager } from './simulation'
+import { DemoScene, RoadGrid, ZoneManager, CitizenManager } from './game'
+import { GridMap, RoadGraph, EconomyManager } from './simulation'
 import { HUD, MiniMap, ZoningToolbar } from './ui'
 
 async function main(): Promise<void> {
@@ -9,10 +9,12 @@ async function main(): Promise<void> {
 
   const engine = await GameEngine.create(canvas)
   const scene = new DemoScene(engine.scene)
-  const gridMap = new GridMap()
-  const roadGrid = new RoadGrid(engine.scene, scene.camera, gridMap, scene.ground)
-  const zoneManager = new ZoneManager(engine.scene, scene.camera, gridMap, scene.ground)
-  const economy = new EconomyManager(gridMap)
+  const gridMap       = new GridMap()
+  const roadGraph     = new RoadGraph(gridMap)
+  const roadGrid      = new RoadGrid(engine.scene, scene.camera, gridMap, scene.ground)
+  const zoneManager   = new ZoneManager(engine.scene, scene.camera, gridMap, scene.ground)
+  const citizens      = new CitizenManager(engine.scene, gridMap, roadGraph)
+  const economy       = new EconomyManager(gridMap)
 
   const hud = new HUD()
   const toolbar = new ZoningToolbar()
@@ -51,8 +53,9 @@ async function main(): Promise<void> {
   })
 
   engine.start(() => {
-    const deltaSeconds = engine.engine.getDeltaTime() / 1_000
+    const deltaSeconds = Math.min(engine.engine.getDeltaTime() / 1_000, 0.1)
     economy.tick(deltaSeconds)
+    citizens.update(deltaSeconds)
     hud.update(engine.engine.getFps())
     hud.updateEconomy(
       economy.balance,
