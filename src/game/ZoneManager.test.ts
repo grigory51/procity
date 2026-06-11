@@ -37,7 +37,7 @@ vi.mock('@babylonjs/core', () => {
       CreateCylinder: vi.fn((name: string) => makeMesh(name)),
     },
     Mesh: {
-      MergeMeshes: vi.fn((meshes: unknown[], _dispose: boolean, _combine: boolean) => makeMesh('merged')),
+      MergeMeshes: vi.fn((_meshes: unknown[], _dispose: boolean, _combine: boolean) => makeMesh('merged')),
     },
     // Must use function (not arrow) so they can be called with `new`
     StandardMaterial: vi.fn(function () {
