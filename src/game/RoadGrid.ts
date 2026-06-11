@@ -105,6 +105,11 @@ export class RoadGrid {
     this.spawnRoadMesh(cx, cz)
   }
 
+  /** Recreates the road mesh for a saved cell without modifying GridMap. */
+  restoreAt(cx: number, cz: number): void {
+    this.spawnRoadMesh(cx, cz)
+  }
+
   private spawnRoadMesh(cx: number, cz: number): void {
     const key = `${cx},${cz}`
     if (this.roadInstances.has(key)) return

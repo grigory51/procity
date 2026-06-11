@@ -133,6 +133,16 @@ export class ZoneManager {
     }
   }
 
+  /** Recreates building + overlay visuals for a saved zone cell without modifying GridMap. */
+  restoreAt(cx: number, cz: number, cellType: CellType): void {
+    const zone = CELL_TO_ZONE[cellType]
+    if (zone === undefined) return
+    const key = `${cx},${cz}`
+    const { x, z } = this.gridMap.cellToWorld(cx, cz)
+    this.buildings.set(key, this.buildingSystem.spawnAt(cx, cz, zone, x, z))
+    this.overlays.set(key, this.createOverlayQuad(key, x, z, zone))
+  }
+
   private zoneAt(cx: number, cz: number, tool: Exclude<ZoneTool, 'demolish'>): void {
     const cellType = TOOL_TO_CELL[tool]
     const current = this.gridMap.get(cx, cz)

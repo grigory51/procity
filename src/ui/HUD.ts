@@ -167,6 +167,29 @@ export class HUD {
     this.simPanel = panel
   }
 
+  /** Appends a "New Game" button to the sim panel. Call after initSimPanel. */
+  addNewGameButton(onClick: () => void): void {
+    if (!this.simPanel) return
+    const btn = document.createElement('button')
+    btn.textContent = 'New Game'
+    btn.title = 'Clear save and start a fresh city'
+    btn.style.cssText = [
+      'background:rgba(200,50,50,0.25)',
+      'border:1px solid rgba(200,50,50,0.5)',
+      'color:#ffaaaa', 'font-family:monospace', 'font-size:11px',
+      'padding:2px 8px', 'border-radius:3px', 'cursor:pointer',
+      'transition:background 0.1s', 'width:100%', 'text-align:center',
+    ].join(';')
+    btn.addEventListener('mouseenter', () => {
+      btn.style.background = 'rgba(200,50,50,0.5)'
+    })
+    btn.addEventListener('mouseleave', () => {
+      btn.style.background = 'rgba(200,50,50,0.25)'
+    })
+    btn.addEventListener('click', onClick)
+    this.simPanel.appendChild(btn)
+  }
+
   updateSimState(state: SimTimeState): void {
     if (!this.simTimeEl) return
     const h  = state.gameHour.toString().padStart(2, '0')

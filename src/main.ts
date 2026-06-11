@@ -1,6 +1,6 @@
 import { GameEngine } from './engine'
 import { DemoScene, RoadGrid, ZoneManager, CitizenManager } from './game'
-import { GridMap, RoadGraph, EconomyManager, SimulationEngine } from './simulation'
+import { GridMap, CellType, RoadGraph, EconomyManager, SimulationEngine, SaveSystem } from './simulation'
 import { HUD, MiniMap, StatsPanel, ZoningToolbar } from './ui'
 
 async function main(): Promise<void> {
@@ -22,6 +22,44 @@ async function main(): Promise<void> {
   const miniMap   = new MiniMap(gridMap, scene.camera)
   const statsPanel = new StatsPanel()
 
+  // ── Restore saved state ────────────────────────────────────────────────
+
+  const saved = SaveSystem.load()
+  if (saved) {
+    try {
+      const cells = SaveSystem.decodeCells(saved.cells)
+      gridMap.loadFrom(cells)
+      economy.restoreBalance(saved.balance)
+      sim.restoreState(saved.simSpeed, saved.simPaused)
+
+      // Rebuild visuals from cell data
+      for (let z = 0; z < gridMap.height; z++) {
+        for (let x = 0; x < gridMap.width; x++) {
+          const cell = gridMap.get(x, z)
+          if (cell === CellType.ROAD) {
+            roadGrid.restoreAt(x, z)
+          } else if (cell !== CellType.EMPTY) {
+            zoneManager.restoreAt(x, z, cell)
+          }
+        }
+      }
+    } catch {
+      // Corrupt save data — start fresh silently
+    }
+  }
+
+  // ── AutoSave ───────────────────────────────────────────────────────────
+
+  const saveSystem = new SaveSystem(gridMap.version, () => {
+    SaveSystem.write({
+      version: 1,
+      cells: SaveSystem.encodeCells(gridMap.getCells()),
+      balance: economy.balance,
+      simSpeed: sim.speed,
+      simPaused: sim.isPaused,
+    })
+  })
+
   // ── Economy events ──────────────────────────────────────────────────────
 
   economy.onBankruptcy(() => {
@@ -36,6 +74,7 @@ async function main(): Promise<void> {
       receipt.state,
       economy.secondsUntilCycle,
     )
+    saveSystem.scheduleSave()  // persist balance after each tax cycle
   })
 
   // ── SimulationEngine: subsystem ticks and state callbacks ──────────────
@@ -54,6 +93,11 @@ async function main(): Promise<void> {
     (speed) => sim.setSpeed(speed),
   )
   hud.updateSimState(sim.state)
+
+  hud.addNewGameButton(() => {
+    SaveSystem.clear()
+    window.location.reload()
+  })
 
   // ── Keyboard hotkeys: Space=pause, 1/2/3 = 1×/2×/4× ───────────────────
 
@@ -111,6 +155,7 @@ async function main(): Promise<void> {
       economy.lastExpenses,
       economy.fiscalState,
     )
+    saveSystem.checkVersion(gridMap.version)
   })
 }
 

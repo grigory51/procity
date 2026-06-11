@@ -68,6 +68,13 @@ export class SimulationEngine {
     this._isPaused ? this.resume() : this.pause()
   }
 
+  /** Restores speed and paused state from a saved snapshot without side effects. */
+  restoreState(speed: SimSpeed, isPaused: boolean): void {
+    this._speed = speed
+    this._isPaused = isPaused
+    this._emitState()
+  }
+
   /** Set playback speed and automatically resume if paused. */
   setSpeed(speed: SimSpeed): void {
     this._speed = speed

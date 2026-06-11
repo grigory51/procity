@@ -60,6 +60,9 @@ export class EconomyManager {
   onBankruptcy(cb: () => void): void { this._onBankruptcyCb = cb }
   onTaxCycle(cb: (receipt: TaxReceipt) => void): void { this._onTaxCycleCb = cb }
 
+  /** Restores balance from a saved state. */
+  restoreBalance(balance: number): void { this._balance = balance }
+
   /** Advance the simulation. deltaSeconds = real elapsed seconds × timeScale. */
   tick(deltaSeconds: number): void {
     this._elapsed += deltaSeconds

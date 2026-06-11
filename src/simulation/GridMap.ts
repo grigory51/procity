@@ -4,6 +4,12 @@ export enum CellType {
   ZONE_RESIDENTIAL = 2,
   ZONE_COMMERCIAL = 3,
   ZONE_INDUSTRIAL = 4,
+  ROAD_COLLECTOR = 5,
+  ROAD_ARTERIAL = 6,
+}
+
+export function isRoadCell(type: CellType): boolean {
+  return type === CellType.ROAD || type === CellType.ROAD_COLLECTOR || type === CellType.ROAD_ARTERIAL
 }
 
 const GRID_SIZE = 200
@@ -35,6 +41,18 @@ export class GridMap {
     this.cells[z * this.width + x] = type
     this._version++
     return true
+  }
+
+  /** Returns a snapshot copy of the raw cell buffer for serialization. */
+  getCells(): Uint8Array {
+    return new Uint8Array(this.cells)
+  }
+
+  /** Bulk-loads cell data from a saved snapshot. Silently ignores size mismatch. */
+  loadFrom(data: Uint8Array): void {
+    if (data.length !== this.cells.length) return
+    this.cells.set(data)
+    this._version++
   }
 
   outOfBounds(x: number, z: number): boolean {
