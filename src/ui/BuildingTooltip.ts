@@ -7,7 +7,9 @@ const ZONE_LABEL: Partial<Record<CellType, string>> = {
   [CellType.ZONE_RESIDENTIAL]: 'Residential',
   [CellType.ZONE_COMMERCIAL]:  'Commercial',
   [CellType.ZONE_INDUSTRIAL]:  'Industrial',
-  [CellType.ROAD]:             'Road',
+  [CellType.ROAD]:             'Road (local)',
+  [CellType.ROAD_COLLECTOR]:   'Road (collector)',
+  [CellType.ROAD_ARTERIAL]:    'Road (arterial)',
 }
 
 function fmtMoney(n: number): string {
@@ -98,13 +100,26 @@ export class BuildingTooltip {
 
       const incomePerCell = this.computeIncomePerCell(cellType)
       if (incomePerCell > 0) {
-        lines.push(`<span style="color:#4caf50">+${fmtMoney(incomePerCell)}/cycle</span>`)
+        lines.push(`<span style="color:#4caf50">+${fmtMoney(incomePerCell)}/cycle tax</span>`)
+      }
+
+      const tier = this.bestRoadTierAt(cx, cz)
+      if (tier === CellType.ROAD_ARTERIAL) {
+        lines.push(`<span style="color:#ffa726">🛣 Arterial road (+50% tax bonus)</span>`)
+      } else if (tier === CellType.ROAD_COLLECTOR) {
+        lines.push(`<span style="color:#90caf9">🛤 Collector road</span>`)
+      } else if (tier === CellType.ROAD) {
+        lines.push(`<span style="color:rgba(255,255,255,0.5)">🛤 Local road</span>`)
+      } else {
+        lines.push(`<span style="color:#e53935">⚠ No road access</span>`)
       }
     }
 
-    if (cellType === CellType.ROAD || (cellType as number) >= 5) {
-      const rate = this.economy.taxRates.roadMaintenance
-      lines.push(`<span style="color:#e53935">−${fmtMoney(rate)}/cycle maint.</span>`)
+    if (cellType === CellType.ROAD_ARTERIAL) {
+      lines.push(`<span style="color:#ffa726">Boosts adjacent commercial zones +50%</span>`)
+      lines.push(`<span style="color:#e53935">−${fmtMoney(this.economy.taxRates.roadMaintenance)}/cycle maint.</span>`)
+    } else if (cellType === CellType.ROAD_COLLECTOR || cellType === CellType.ROAD) {
+      lines.push(`<span style="color:#e53935">−${fmtMoney(this.economy.taxRates.roadMaintenance)}/cycle maint.</span>`)
     }
 
     this.el.innerHTML = lines.join('<br>')
@@ -120,6 +135,21 @@ export class BuildingTooltip {
     if (top  + h > vh - 8) top  = this.mouseY - h - 4
     this.el.style.left = `${left}px`
     this.el.style.top  = `${top}px`
+  }
+
+  private bestRoadTierAt(cx: number, cz: number): CellType | null {
+    const neighbors = [
+      { x: cx - 1, z: cz }, { x: cx + 1, z: cz },
+      { x: cx, z: cz - 1 }, { x: cx, z: cz + 1 },
+    ]
+    let best: CellType | null = null
+    for (const n of neighbors) {
+      const cell = this.gridMap.get(n.x, n.z)
+      if (cell === CellType.ROAD_ARTERIAL) return CellType.ROAD_ARTERIAL
+      if (cell === CellType.ROAD_COLLECTOR) best = CellType.ROAD_COLLECTOR
+      else if (cell === CellType.ROAD && best !== CellType.ROAD_COLLECTOR) best = CellType.ROAD
+    }
+    return best
   }
 
   private computeIncomePerCell(cellType: CellType): number {

@@ -116,6 +116,20 @@ async function main(): Promise<void> {
       economy.secondsUntilCycle,
     )
     saveSystem.scheduleSave()  // persist balance after each tax cycle
+    statsPanel.pushCycleNet(receipt.netChange)
+
+    const resCells = gridMap.countCellType(CellType.ZONE_RESIDENTIAL)
+    const comCells = gridMap.countCellType(CellType.ZONE_COMMERCIAL)
+    const resInc   = Math.round(economy.lastResidentialIncome)
+    const comInc   = Math.round(economy.lastCommercialIncome)
+    const roadCost = Math.round(receipt.expenses)
+    if (resCells + comCells > 0) {
+      hud.logActivity(
+        `💰 +$${resInc.toLocaleString()} res (${resCells}) · +$${comInc.toLocaleString()} com (${comCells}) · −$${roadCost.toLocaleString()} roads`
+      )
+    } else {
+      hud.logActivity('💰 Tax cycle: no zones yet — build residential zones to earn income')
+    }
   })
 
   // ── SimulationEngine: subsystem ticks and state callbacks ──────────────
@@ -208,6 +222,8 @@ async function main(): Promise<void> {
 
   // ── Render loop ────────────────────────────────────────────────────────
 
+  let firstCommuteLogged = false
+
   engine.start(() => {
     const realDelta = Math.min(engine.engine.getDeltaTime() / 1_000, 0.1)
     sim.tick(realDelta)          // drives economy + citizens via onTick
@@ -221,6 +237,10 @@ async function main(): Promise<void> {
     )
     miniMap.update(citizens.count)
     hud.updateCitizenActivity(citizens.commutingCount, citizens.atHomeCount, citizens.atWorkCount)
+    if (!firstCommuteLogged && citizens.commutingCount > 0) {
+      firstCommuteLogged = true
+      hud.logActivity('👨‍💼 First residents are commuting — tax income grows as more zones are built!')
+    }
     statsPanel.push(
       citizens.count,
       economy.balance,

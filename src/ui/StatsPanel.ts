@@ -47,6 +47,8 @@ export class StatsPanel {
   private pending:       Snapshot | null = null
   private firstFlush     = true
   private intervalId:    ReturnType<typeof setInterval>
+  private cycleNets:     number[] = []
+  private trendEl:       HTMLDivElement | null = null
 
   constructor() {
     this.el = document.createElement('div')
@@ -88,6 +90,18 @@ export class StatsPanel {
     for (const r of [rowPop, rowBal, rowInc, rowResInc, rowComInc, rowExp, rowNet, rowState]) {
       this.el.appendChild(r)
     }
+
+    const trendHeader = document.createElement('div')
+    trendHeader.style.cssText = 'margin-top:6px;font-size:10px;letter-spacing:0.06em;color:rgba(255,255,255,0.3);text-transform:uppercase'
+    trendHeader.textContent = 'Last 5 cycles'
+
+    const trendEl = document.createElement('div')
+    trendEl.style.cssText = 'height:20px;display:flex;align-items:flex-end;gap:3px;margin-top:3px'
+    trendEl.innerHTML = '<span style="font-size:10px;color:rgba(255,255,255,0.2)">— no data yet</span>'
+    this.trendEl = trendEl
+
+    this.el.appendChild(trendHeader)
+    this.el.appendChild(trendEl)
 
     document.body.appendChild(this.el)
 
@@ -151,6 +165,24 @@ export class StatsPanel {
     this.spanNet.style.color    = net >= 0 ? '#4caf50' : '#e53935'
     this.spanState.textContent  = s.state.toUpperCase()
     this.spanState.style.color  = STATE_COLOR[s.state]
+  }
+
+  /** Record the net change from a completed tax cycle and update the trend bars. */
+  pushCycleNet(net: number): void {
+    this.cycleNets.push(net)
+    if (this.cycleNets.length > 5) this.cycleNets.shift()
+    this.renderTrend()
+  }
+
+  private renderTrend(): void {
+    if (!this.trendEl || this.cycleNets.length === 0) return
+    const maxAbs = Math.max(...this.cycleNets.map(n => Math.abs(n)), 1)
+    this.trendEl.innerHTML = this.cycleNets.map(n => {
+      const heightPct = Math.max(Math.round(Math.abs(n) / maxAbs * 100), 10)
+      const color = n >= 0 ? '#4caf50' : '#e53935'
+      const label = (n >= 0 ? '+' : '−') + '$' + Math.abs(Math.round(n)).toLocaleString()
+      return `<div title="${label}" style="background:${color};width:14px;height:${heightPct}%;min-height:3px;border-radius:2px 2px 0 0;flex-shrink:0"></div>`
+    }).join('')
   }
 
   dispose(): void {
