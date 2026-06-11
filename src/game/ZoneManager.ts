@@ -70,6 +70,7 @@ export class ZoneManager {
   // Callbacks
   private _noRoadAccessCb: (() => void) | null = null
   private _wrongTierCb: ((zone: Exclude<ZoneTool, 'demolish'>, needed: string) => void) | null = null
+  private _demolishRoadCb: ((cx: number, cz: number) => void) | null = null
   private _lastNoRoadNotifyMs = 0
 
   constructor(scene: Scene, camera: ArcRotateCamera, gridMap: GridMap, ground: Mesh) {
@@ -101,6 +102,11 @@ export class ZoneManager {
   /** Register a callback that fires when a zone is rejected because the adjacent road tier is too low. */
   onWrongRoadTier(cb: (zone: Exclude<ZoneTool, 'demolish'>, needed: string) => void): void {
     this._wrongTierCb = cb
+  }
+
+  /** Register a callback that fires when the demolish tool hits a road cell. */
+  onDemolishRoad(cb: (cx: number, cz: number) => void): void {
+    this._demolishRoadCb = cb
   }
 
   setTool(tool: ZoneTool | null): void {
@@ -251,7 +257,13 @@ export class ZoneManager {
 
   private demolishAt(cx: number, cz: number): void {
     const current = this.gridMap.get(cx, cz)
-    if (current === CellType.EMPTY || isRoadCell(current)) return
+    if (current === CellType.EMPTY) return
+
+    if (isRoadCell(current)) {
+      // Delegate road removal to RoadGrid via callback
+      this._demolishRoadCb?.(cx, cz)
+      return
+    }
 
     const key = `${cx},${cz}`
     this.removeVisuals(key)

@@ -83,6 +83,11 @@ async function main(): Promise<void> {
     hud.showNotification(`🚫 ${zoneName} zones need ${needed}`, 3_000)
   })
 
+  zoneManager.onDemolishRoad((cx, cz) => {
+    roadGrid.removeAt(cx, cz)
+    zoneManager.refreshGhostLayer()
+  })
+
   // ── Road placement events ──────────────────────────────────────────────
 
   // Refresh ghost layer so newly placed roads unlock adjacent cells immediately

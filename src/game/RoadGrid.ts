@@ -6,6 +6,7 @@ import {
   PointerEventTypes,
   Scene,
   StandardMaterial,
+  Vector3,
   type InstancedMesh,
   type Observer,
   type PointerInfo,
@@ -14,6 +15,8 @@ import { CellType, GridMap, isRoadCell } from '../simulation'
 
 export type RoadTier = 'local' | 'collector' | 'arterial'
 export type RoadMode = 'place' | 'upgrade'
+
+type PlacementPhase = 'idle' | 'placing'
 
 const TIER_CELL_TYPE: Record<RoadTier, CellType> = {
   local:     CellType.ROAD,
@@ -43,12 +46,24 @@ export class RoadGrid {
   private roadInstances: Map<string, InstancedMesh> = new Map()
   private currentTier: RoadTier = 'local'
   private currentMode: RoadMode = 'place'
-  private isDragging = false
   private active = false
   private pointerObserver: Observer<PointerInfo> | null = null
   private _onRoadPlacedCb: (() => void) | null = null
   private _onIntersectionCb: (() => void) | null = null
   private _onRoadUpgradedCb: (() => void) | null = null
+
+  // CS-style click-click placement state
+  private placementPhase: PlacementPhase = 'idle'
+  private startCell: { x: number; z: number } | null = null
+
+  // Ghost preview meshes
+  private ghostSourceMesh: Mesh | null = null
+  private ghostInstances: InstancedMesh[] = []
+  private startIndicator: Mesh | null = null
+  private snapIndicator: Mesh | null = null
+
+  // Snap radius in cells (Manhattan distance)
+  private static readonly SNAP_RADIUS = 1
 
   constructor(scene: Scene, camera: ArcRotateCamera, gridMap: GridMap, ground: Mesh) {
     this.scene = scene
@@ -58,6 +73,7 @@ export class RoadGrid {
     for (const tier of ['local', 'collector', 'arterial'] as RoadTier[]) {
       this.sourceMeshes.set(tier, this.createSourceMesh(tier))
     }
+    this.initPreviewMeshes()
   }
 
   get roadCount(): number {
@@ -67,9 +83,11 @@ export class RoadGrid {
   setTier(tier: RoadTier): void {
     this.currentTier = tier
     this.currentMode = 'place'
+    this.cancelPlacement()
   }
 
   setMode(mode: RoadMode): void {
+    if (this.currentMode !== mode) this.cancelPlacement()
     this.currentMode = mode
   }
 
@@ -97,12 +115,74 @@ export class RoadGrid {
   deactivate(): void {
     if (!this.active) return
     this.active = false
-    this.isDragging = false
+    this.cancelPlacement()
     this.camera.attachControl(true)
     if (this.pointerObserver) {
       this.scene.onPointerObservable.remove(this.pointerObserver)
       this.pointerObserver = null
     }
+  }
+
+  /** Remove the road at a cell and clear the grid cell. Used by the demolish tool. */
+  removeAt(cx: number, cz: number): void {
+    const key = `${cx},${cz}`
+    const inst = this.roadInstances.get(key)
+    if (inst) {
+      inst.dispose()
+      this.roadInstances.delete(key)
+    }
+    this.gridMap.set(cx, cz, CellType.EMPTY)
+    this._onRoadPlacedCb?.()
+  }
+
+  private initPreviewMeshes(): void {
+    // Ghost road (semi-transparent blue — shows where road will be placed)
+    const ghostMat = new StandardMaterial('roadGhostMat', this.scene)
+    ghostMat.diffuseColor = new Color3(0.4, 0.7, 1.0)
+    ghostMat.alpha = 0.45
+    ghostMat.backFaceCulling = false
+    ghostMat.disableLighting = true
+
+    this.ghostSourceMesh = MeshBuilder.CreateBox(
+      'roadGhostSource',
+      { width: 0.9, height: 0.08, depth: 0.9 },
+      this.scene,
+    )
+    this.ghostSourceMesh.material = ghostMat
+    this.ghostSourceMesh.isPickable = false
+    this.ghostSourceMesh.setEnabled(false)
+
+    // Start indicator (green) — marks where the road segment begins
+    const startMat = new StandardMaterial('roadStartMat', this.scene)
+    startMat.diffuseColor = new Color3(0.1, 1.0, 0.5)
+    startMat.alpha = 0.75
+    startMat.disableLighting = true
+    startMat.backFaceCulling = false
+
+    this.startIndicator = MeshBuilder.CreateBox(
+      'roadStartIndicator',
+      { width: 0.96, height: 0.14, depth: 0.96 },
+      this.scene,
+    )
+    this.startIndicator.material = startMat
+    this.startIndicator.isPickable = false
+    this.startIndicator.setEnabled(false)
+
+    // Snap indicator (yellow) — highlights the nearest existing road node that will snap
+    const snapMat = new StandardMaterial('roadSnapMat', this.scene)
+    snapMat.diffuseColor = new Color3(1.0, 0.85, 0.1)
+    snapMat.alpha = 0.7
+    snapMat.disableLighting = true
+    snapMat.backFaceCulling = false
+
+    this.snapIndicator = MeshBuilder.CreateBox(
+      'roadSnapIndicator',
+      { width: 1.0, height: 0.16, depth: 1.0 },
+      this.scene,
+    )
+    this.snapIndicator.material = snapMat
+    this.snapIndicator.isPickable = false
+    this.snapIndicator.setEnabled(false)
   }
 
   private createSourceMesh(tier: RoadTier): Mesh {
@@ -124,34 +204,183 @@ export class RoadGrid {
 
   private handlePointerEvent(info: PointerInfo): void {
     switch (info.type) {
-      case PointerEventTypes.POINTERDOWN:
-        if (info.event.button === 0) {
-          this.isDragging = true
-          this.placeRoadAtPointer()
-        }
-        break
       case PointerEventTypes.POINTERMOVE:
-        if (this.isDragging) this.placeRoadAtPointer()
+        this.onPointerMove()
         break
-      case PointerEventTypes.POINTERUP:
-        this.isDragging = false
+      case PointerEventTypes.POINTERDOWN:
+        if (info.event.button === 0) this.onLeftClick()
+        else if (info.event.button === 2) this.cancelPlacement()
         break
     }
   }
 
-  private placeRoadAtPointer(): void {
+  private pickCell(): { x: number; z: number } | null {
     const pick = this.scene.pick(
       this.scene.pointerX,
       this.scene.pointerY,
       (mesh) => mesh === this.ground,
     )
-    if (!pick.hit || !pick.pickedPoint) return
-    const { x, z } = this.gridMap.worldToCell(pick.pickedPoint.x, pick.pickedPoint.z)
-    if (this.currentMode === 'upgrade') {
-      this.upgradeRoadAt(x, z)
-    } else {
-      this.placeRoadAt(x, z)
+    if (!pick.hit || !pick.pickedPoint) return null
+    return this.gridMap.worldToCell(pick.pickedPoint.x, pick.pickedPoint.z)
+  }
+
+  private onPointerMove(): void {
+    const raw = this.pickCell()
+    if (!raw) {
+      this.snapIndicator?.setEnabled(false)
+      if (this.placementPhase === 'placing') this.clearGhost()
+      return
     }
+
+    if (this.currentMode === 'upgrade') {
+      const isRoad = isRoadCell(this.gridMap.get(raw.x, raw.z))
+      this.snapIndicator!.setEnabled(isRoad)
+      if (isRoad) this.snapIndicator!.position = this.cellPos(raw.x, raw.z)
+      return
+    }
+
+    const snapped = this.findSnap(raw.x, raw.z)
+    const target = snapped ?? raw
+
+    if (snapped) {
+      this.snapIndicator!.position = this.cellPos(snapped.x, snapped.z)
+      this.snapIndicator!.setEnabled(true)
+    } else {
+      this.snapIndicator!.setEnabled(false)
+    }
+
+    if (this.placementPhase === 'placing' && this.startCell) {
+      this.updateGhostPath(this.startCell, target)
+    }
+  }
+
+  private onLeftClick(): void {
+    const raw = this.pickCell()
+    if (!raw) return
+
+    if (this.currentMode === 'upgrade') {
+      this.upgradeRoadAt(raw.x, raw.z)
+      return
+    }
+
+    const snapped = this.findSnap(raw.x, raw.z)
+    const cell = snapped ?? raw
+
+    if (this.placementPhase === 'idle') {
+      // Click 1: set start of segment
+      this.startCell = cell
+      this.placementPhase = 'placing'
+      this.startIndicator!.position = this.cellPos(cell.x, cell.z)
+      this.startIndicator!.setEnabled(true)
+      this.clearGhost()
+    } else if (this.startCell) {
+      // Click 2: place road from start to end, then continue from end
+      this.placeRoadSegment(this.startCell, cell)
+      this.startCell = cell
+      this.startIndicator!.position = this.cellPos(cell.x, cell.z)
+    }
+  }
+
+  private cancelPlacement(): void {
+    this.placementPhase = 'idle'
+    this.startCell = null
+    this.clearGhost()
+    this.startIndicator?.setEnabled(false)
+    this.snapIndicator?.setEnabled(false)
+  }
+
+  private cellPos(cx: number, cz: number): Vector3 {
+    const { x, z } = this.gridMap.cellToWorld(cx, cz)
+    return new Vector3(x, 0.05, z)
+  }
+
+  /** Returns the nearest existing road cell within SNAP_RADIUS (Manhattan), or null. */
+  private findSnap(cx: number, cz: number): { x: number; z: number } | null {
+    const r = RoadGrid.SNAP_RADIUS
+    let best: { x: number; z: number } | null = null
+    let bestDist = Infinity
+
+    for (let dz = -r; dz <= r; dz++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const nx = cx + dx
+        const nz = cz + dz
+        if (!isRoadCell(this.gridMap.get(nx, nz))) continue
+        const dist = Math.abs(dx) + Math.abs(dz)
+        if (dist < bestDist) {
+          bestDist = dist
+          best = { x: nx, z: nz }
+        }
+      }
+    }
+
+    return best
+  }
+
+  /**
+   * Returns the grid cells forming an L-shaped path from `from` to `to`:
+   * horizontal first, then vertical. Both endpoints included.
+   */
+  private getPathCells(
+    from: { x: number; z: number },
+    to: { x: number; z: number },
+  ): { x: number; z: number }[] {
+    const cells: { x: number; z: number }[] = []
+    const dx = Math.sign(to.x - from.x)
+
+    // Horizontal segment: from.x → to.x at from.z
+    let x = from.x
+    while (true) {
+      cells.push({ x, z: from.z })
+      if (x === to.x) break
+      x += dx
+    }
+
+    // Vertical segment: from.z+step → to.z at to.x (corner already added above)
+    const dz = Math.sign(to.z - from.z)
+    if (dz !== 0) {
+      let z = from.z + dz
+      while (true) {
+        cells.push({ x: to.x, z })
+        if (z === to.z) break
+        z += dz
+      }
+    }
+
+    return cells
+  }
+
+  private ghostSeq = 0
+
+  private updateGhostPath(
+    from: { x: number; z: number },
+    to: { x: number; z: number },
+  ): void {
+    this.clearGhost()
+    const cells = this.getPathCells(from, to)
+    for (const cell of cells) {
+      if (this.gridMap.get(cell.x, cell.z) !== CellType.EMPTY) continue
+      const inst = this.ghostSourceMesh!.createInstance(`ghost_${this.ghostSeq++}`)
+      const { x, z } = this.gridMap.cellToWorld(cell.x, cell.z)
+      inst.position.set(x, 0.04, z)
+      this.ghostInstances.push(inst)
+    }
+  }
+
+  private clearGhost(): void {
+    for (const inst of this.ghostInstances) inst.dispose()
+    this.ghostInstances = []
+  }
+
+  private placeRoadSegment(
+    from: { x: number; z: number },
+    to: { x: number; z: number },
+  ): void {
+    const cells = this.getPathCells(from, to)
+    for (const cell of cells) {
+      this.placeRoadAt(cell.x, cell.z)
+    }
+    // Clear ghost after placing so it doesn't linger
+    this.clearGhost()
   }
 
   private upgradeRoadAt(cx: number, cz: number): void {
@@ -168,13 +397,12 @@ export class RoadGrid {
     this.gridMap.set(cx, cz, TIER_CELL_TYPE[nextTier])
     this.spawnRoadMesh(cx, cz, nextTier)
     this._onRoadUpgradedCb?.()
-    this._onRoadPlacedCb?.()  // refresh ghost layer
+    this._onRoadPlacedCb?.()
   }
 
   private placeRoadAt(cx: number, cz: number): void {
     if (this.gridMap.get(cx, cz) !== CellType.EMPTY) return
 
-    // Count road neighbors before placing to detect intersection formation
     const neighbors = [
       { x: cx - 1, z: cz }, { x: cx + 1, z: cz },
       { x: cx, z: cz - 1 }, { x: cx, z: cz + 1 },
@@ -216,6 +444,10 @@ export class RoadGrid {
 
   dispose(): void {
     this.deactivate()
+    this.clearGhost()
+    this.ghostSourceMesh?.dispose()
+    this.startIndicator?.dispose()
+    this.snapIndicator?.dispose()
     for (const inst of this.roadInstances.values()) inst.dispose()
     for (const mesh of this.sourceMeshes.values()) mesh.dispose()
   }
