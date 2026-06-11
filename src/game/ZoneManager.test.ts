@@ -9,9 +9,11 @@ vi.mock('@babylonjs/core', () => {
       isVisible: true,
       isPickable: true,
       position: { x: 0, y: 0, z: 0 },
+      rotation: { x: 0, y: 0, z: 0 },
       scaling: { x: 1, y: 1, z: 1 },
       material: null,
       setEnabled: vi.fn(),
+      bakeCurrentTransformIntoVertices: vi.fn(),
       createInstance: vi.fn((iname: string) => ({
         name: iname,
         position: { x: 0, y: 0, z: 0 },
@@ -32,10 +34,27 @@ vi.mock('@babylonjs/core', () => {
     MeshBuilder: {
       CreateBox: vi.fn((name: string) => makeMesh(name)),
       CreateGround: vi.fn((name: string) => makeMesh(name)),
+      CreateCylinder: vi.fn((name: string) => makeMesh(name)),
+    },
+    Mesh: {
+      MergeMeshes: vi.fn((meshes: unknown[], _dispose: boolean, _combine: boolean) => makeMesh('merged')),
     },
     // Must use function (not arrow) so they can be called with `new`
     StandardMaterial: vi.fn(function () {
-      return { diffuseColor: null, specularColor: null, alpha: 1, backFaceCulling: true, disableLighting: false, dispose: vi.fn() }
+      return { diffuseColor: null, specularColor: null, diffuseTexture: null, alpha: 1, backFaceCulling: true, disableLighting: false, dispose: vi.fn() }
+    }),
+    PBRMaterial: vi.fn(function () {
+      return { albedoColor: null, metallic: 0, roughness: 0, dispose: vi.fn() }
+    }),
+    DynamicTexture: vi.fn(function () {
+      return {
+        getContext: vi.fn(() => ({
+          fillStyle: '',
+          fillRect: vi.fn(),
+        })),
+        update: vi.fn(),
+        dispose: vi.fn(),
+      }
     }),
     Color3: vi.fn(function (r: number, g: number, b: number) { return { r, g, b } }),
     Vector3: vi.fn(function (x: number, y: number, z: number) { return { x, y, z } }),
