@@ -26,8 +26,10 @@ vi.mock('@babylonjs/core', () => {
 
   return {
     Scene: vi.fn(function () {
-      return { onPointerObservable: { add: vi.fn(() => ({})), remove: vi.fn() }, pick: vi.fn(() => ({ hit: false, pickedPoint: null })), pointerX: 0, pointerY: 0 }
+      return { onPointerObservable: { add: vi.fn(() => ({})), remove: vi.fn() }, pick: vi.fn(() => ({ hit: false, pickedPoint: null })), pointerX: 0, pointerY: 0, lights: [] }
     }),
+    DirectionalLight: vi.fn(function () { return {} }),
+    ShadowGenerator: vi.fn(function () { return { useBlurExponentialShadowMap: false, blurScale: 0, addShadowCaster: vi.fn() } }),
     ArcRotateCamera: vi.fn(function () {
       return { detachControl: vi.fn(), attachControl: vi.fn() }
     }),
@@ -97,14 +99,14 @@ describe('ZoneManager', () => {
 
     it('records ZONE_COMMERCIAL in GridMap', () => {
       const { zm, gridMap } = createZoneManager()
-      addRoadRight(gridMap, 5, 5)
+      gridMap.set(6, 5, CellType.ROAD_COLLECTOR)  // commercial requires collector tier
       ;(zm as any).zoneAt(5, 5, 'commercial')
       expect(gridMap.get(5, 5)).toBe(CellType.ZONE_COMMERCIAL)
     })
 
     it('records ZONE_INDUSTRIAL in GridMap', () => {
       const { zm, gridMap } = createZoneManager()
-      addRoadRight(gridMap, 3, 3)
+      gridMap.set(4, 3, CellType.ROAD_ARTERIAL)  // industrial requires arterial tier
       ;(zm as any).zoneAt(3, 3, 'industrial')
       expect(gridMap.get(3, 3)).toBe(CellType.ZONE_INDUSTRIAL)
     })
@@ -128,7 +130,7 @@ describe('ZoneManager', () => {
 
     it('re-zoning a cell to a different type replaces the zone', () => {
       const { zm, gridMap } = createZoneManager()
-      addRoadRight(gridMap, 5, 5)
+      gridMap.set(6, 5, CellType.ROAD_COLLECTOR)  // collector satisfies both residential and commercial
       ;(zm as any).zoneAt(5, 5, 'residential')
       ;(zm as any).zoneAt(5, 5, 'commercial')
       expect(gridMap.get(5, 5)).toBe(CellType.ZONE_COMMERCIAL)
@@ -191,21 +193,21 @@ describe('ZoneManager', () => {
       expect(cb).toHaveBeenCalledTimes(1)
     })
 
-    it('hasRoadAccess returns false for isolated cell', () => {
+    it('bestAccessTier returns -1 for isolated cell', () => {
       const { zm } = createZoneManager()
-      expect((zm as any).hasRoadAccess(10, 10)).toBe(false)
+      expect((zm as any).bestAccessTier(10, 10)).toBe(-1)
     })
 
-    it('hasRoadAccess returns true when left neighbor is ROAD', () => {
+    it('bestAccessTier returns 0 when left neighbor is ROAD', () => {
       const { zm, gridMap } = createZoneManager()
       gridMap.set(9, 10, CellType.ROAD)
-      expect((zm as any).hasRoadAccess(10, 10)).toBe(true)
+      expect((zm as any).bestAccessTier(10, 10)).toBe(0)
     })
 
-    it('hasRoadAccess returns true when right neighbor is ROAD_ARTERIAL', () => {
+    it('bestAccessTier returns 2 when right neighbor is ROAD_ARTERIAL', () => {
       const { zm, gridMap } = createZoneManager()
       gridMap.set(11, 10, CellType.ROAD_ARTERIAL)
-      expect((zm as any).hasRoadAccess(10, 10)).toBe(true)
+      expect((zm as any).bestAccessTier(10, 10)).toBe(2)
     })
   })
 
