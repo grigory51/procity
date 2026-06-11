@@ -19,6 +19,11 @@ export class HUD {
   private simPanel: HTMLDivElement | null = null
   private simTimeEl: HTMLSpanElement | null = null
   private simBtns: Map<string, HTMLButtonElement> = new Map()
+  private activityPanel: HTMLDivElement | null = null
+  private activityCollapsed = false
+  private activityCommutingEl: HTMLSpanElement | null = null
+  private activityAtHomeEl: HTMLSpanElement | null = null
+  private activityAtWorkEl: HTMLSpanElement | null = null
 
   constructor() {
     this.el = document.createElement('div')
@@ -206,9 +211,77 @@ export class HUD {
     }
   }
 
+  /** Creates the "What's Happening" activity panel at the bottom-left. */
+  initActivityPanel(): void {
+    const panel = document.createElement('div')
+    panel.style.cssText = [
+      'position:fixed', 'bottom:16px', 'left:16px',
+      'color:#fff', 'font-family:monospace', 'font-size:12px',
+      'background:rgba(0,0,0,0.65)', 'padding:8px 12px',
+      'border-radius:4px', 'line-height:1.7',
+      'min-width:240px', 'user-select:none',
+    ].join(';')
+
+    const header = document.createElement('div')
+    header.style.cssText = 'display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-bottom:4px'
+
+    const title = document.createElement('span')
+    title.style.cssText = 'font-size:11px;letter-spacing:0.08em;color:rgba(255,255,255,0.45);text-transform:uppercase'
+    title.textContent = 'What\'s Happening'
+
+    const toggle = document.createElement('span')
+    toggle.textContent = '▼'
+    toggle.style.cssText = 'font-size:10px;color:rgba(255,255,255,0.45);transition:transform 0.15s'
+
+    header.append(title, toggle)
+    header.addEventListener('click', () => {
+      this.activityCollapsed = !this.activityCollapsed
+      body.style.display = this.activityCollapsed ? 'none' : 'block'
+      toggle.textContent = this.activityCollapsed ? '▶' : '▼'
+    })
+
+    const body = document.createElement('div')
+
+    const mkRow = (icon: string, id: string): HTMLDivElement => {
+      const row = document.createElement('div')
+      row.style.cssText = 'display:flex;gap:6px;align-items:center'
+      const iconEl = document.createElement('span')
+      iconEl.textContent = icon
+      const valEl = document.createElement('span')
+      valEl.id = id
+      valEl.style.color = 'rgba(255,255,255,0.85)'
+      row.append(iconEl, valEl)
+      return row
+    }
+
+    body.appendChild(mkRow('👤', 'hud-act-commuting'))
+    body.appendChild(mkRow('🏠', 'hud-act-home'))
+    body.appendChild(mkRow('🏪', 'hud-act-work'))
+
+    const explainer = document.createElement('div')
+    explainer.style.cssText = 'margin-top:6px;font-size:10px;color:rgba(255,255,255,0.35);line-height:1.5'
+    explainer.textContent = 'Residents leave home → travel to shops → return. Each trip generates tax income.'
+    body.appendChild(explainer)
+
+    panel.append(header, body)
+    document.body.appendChild(panel)
+    this.activityPanel = panel
+    this.activityCommutingEl = document.getElementById('hud-act-commuting') as HTMLSpanElement
+    this.activityAtHomeEl    = document.getElementById('hud-act-home')      as HTMLSpanElement
+    this.activityAtWorkEl    = document.getElementById('hud-act-work')      as HTMLSpanElement
+  }
+
+  updateCitizenActivity(commuting: number, atHome: number, atWork: number): void {
+    if (!this.activityCommutingEl) return
+    this.activityCommutingEl.textContent = `${commuting} citizens commuting`
+    this.activityAtHomeEl!.textContent   = `${atHome} residents home`
+    this.activityAtWorkEl!.textContent   = `${atWork} shopping`
+  }
+
   dispose(): void {
     this.el.remove()
     this.simPanel?.remove()
+    this.activityPanel?.remove()
     if (this.notificationTimer !== null) clearTimeout(this.notificationTimer)
     this.notificationEl?.remove()
   }

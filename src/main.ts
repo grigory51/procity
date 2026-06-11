@@ -2,7 +2,7 @@ import { GameEngine } from './engine'
 import { DemoScene, RoadGrid, ZoneManager, CitizenManager } from './game'
 import type { RoadTier } from './game/RoadGrid'
 import { GridMap, CellType, RoadGraph, EconomyManager, SimulationEngine, SaveSystem, isRoadCell } from './simulation'
-import { HUD, MiniMap, StatsPanel, ZoningToolbar } from './ui'
+import { HUD, MiniMap, StatsPanel, ZoningToolbar, TutorialPanel, BuildingTooltip } from './ui'
 
 async function main(): Promise<void> {
   const canvas = document.getElementById('canvas') as HTMLCanvasElement
@@ -18,10 +18,15 @@ async function main(): Promise<void> {
   const economy       = new EconomyManager(gridMap)
   const sim           = new SimulationEngine()
 
-  const hud       = new HUD()
-  const toolbar   = new ZoningToolbar()
-  const miniMap   = new MiniMap(gridMap, scene.camera)
+  const hud        = new HUD()
+  const toolbar    = new ZoningToolbar()
+  const miniMap    = new MiniMap(gridMap, scene.camera)
   const statsPanel = new StatsPanel()
+
+  // ── UX clarity: onboarding, tooltips, activity panel ──────────────────
+  new TutorialPanel()
+  new BuildingTooltip(engine.scene, scene.ground, gridMap, economy, citizens)
+  hud.initActivityPanel()
 
   // ── Restore saved state ────────────────────────────────────────────────
 
@@ -188,7 +193,8 @@ async function main(): Promise<void> {
       economy.fiscalState,
       economy.secondsUntilCycle,
     )
-    miniMap.update()
+    miniMap.update(citizens.count)
+    hud.updateCitizenActivity(citizens.commutingCount, citizens.atHomeCount, citizens.atWorkCount)
     statsPanel.push(
       citizens.count,
       economy.balance,

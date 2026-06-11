@@ -59,23 +59,32 @@ interface Citizen {
  * new ones for newly reachable zone pairs.
  */
 export class CitizenManager {
-  private citizens:       Citizen[] = []
-  private template:       Mesh
-  private lastGridVersion = -1
-  private nextInstanceId  = 0
+  private citizens:        Citizen[] = []
+  private template:        Mesh
+  private matCommuting:    StandardMaterial
+  private matStationary:   StandardMaterial
+  private lastGridVersion  = -1
+  private nextInstanceId   = 0
 
   constructor(
     scene:                      Scene,
     private readonly gridMap:   GridMap,
     private readonly roadGraph: RoadGraph,
   ) {
-    const mat         = new StandardMaterial('citizenMat', scene)
-    mat.diffuseColor  = new Color3(1.0, 0.85, 0.10)
-    mat.emissiveColor = new Color3(0.5, 0.40, 0.05)
-    mat.specularColor = new Color3(0.2, 0.20, 0.20)
+    // Blue material for citizens in transit
+    this.matCommuting         = new StandardMaterial('citizenMatCommuting', scene)
+    this.matCommuting.diffuseColor  = new Color3(0.20, 0.55, 1.00)
+    this.matCommuting.emissiveColor = new Color3(0.08, 0.22, 0.50)
+    this.matCommuting.specularColor = new Color3(0.20, 0.20, 0.20)
+
+    // Green material for citizens at home or work
+    this.matStationary        = new StandardMaterial('citizenMatStationary', scene)
+    this.matStationary.diffuseColor  = new Color3(0.20, 0.85, 0.30)
+    this.matStationary.emissiveColor = new Color3(0.08, 0.40, 0.12)
+    this.matStationary.specularColor = new Color3(0.20, 0.20, 0.20)
 
     this.template             = MeshBuilder.CreateSphere('citizenTemplate', { diameter: 0.22, segments: 4 }, scene)
-    this.template.material    = mat
+    this.template.material    = this.matCommuting
     this.template.isPickable  = false
     this.template.setEnabled(false)
   }
@@ -95,10 +104,46 @@ export class CitizenManager {
   /** Current number of active citizen agents. */
   get count(): number { return this.citizens.length }
 
+  get commutingCount(): number {
+    let n = 0
+    for (const c of this.citizens) {
+      if (c.state === State.CommutingToWork || c.state === State.CommutingHome) n++
+    }
+    return n
+  }
+
+  get atWorkCount(): number {
+    let n = 0
+    for (const c of this.citizens) {
+      if (c.state === State.AtWork) n++
+    }
+    return n
+  }
+
+  get atHomeCount(): number {
+    let n = 0
+    for (const c of this.citizens) {
+      if (c.state === State.AtHome) n++
+    }
+    return n
+  }
+
+  /** Returns how many citizens call (cx,cz) home and how many work there. */
+  citizensAtCell(cx: number, cz: number): { residents: number; workers: number } {
+    let residents = 0, workers = 0
+    for (const c of this.citizens) {
+      if (c.homeCell.x === cx && c.homeCell.z === cz) residents++
+      if (c.workCell.x === cx && c.workCell.z === cz) workers++
+    }
+    return { residents, workers }
+  }
+
   dispose(): void {
     for (const c of this.citizens) c.marker.dispose()
     this.citizens = []
     this.template.dispose()
+    this.matCommuting.dispose()
+    this.matStationary.dispose()
   }
 
   // ── Tick ────────────────────────────────────────────────────────────────────
@@ -155,6 +200,7 @@ export class CitizenManager {
   ): void {
     c.state      = state
     c.dwellTimer = dwell
+    c.marker.material = this.matStationary
     const cell   = state === State.AtWork ? c.workCell : c.homeCell
     const wp     = this.gridMap.cellToWorld(cell.x, cell.z)
     c.marker.position.x = wp.x
@@ -165,6 +211,7 @@ export class CitizenManager {
     const leavingWork   = c.state === State.AtWork
     c.state             = leavingWork ? State.CommutingHome : State.CommutingToWork
     c.pathProgress      = 0
+    c.marker.material   = this.matCommuting
     const startNode     = leavingWork ? c.returnPath[0] : c.forwardPath[0]
     const wp            = this.gridMap.cellToWorld(startNode.x, startNode.z)
     c.marker.position.x = wp.x

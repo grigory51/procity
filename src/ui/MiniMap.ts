@@ -103,7 +103,7 @@ export class MiniMap {
     return data
   }
 
-  update(): void {
+  update(citizenCount = 0): void {
     // Lazily rebuild the pixel layer when the grid changes
     if (this.gridMap.version !== this.lastVersion) {
       this.cachedLayer = this.buildCellLayer()
@@ -131,6 +131,15 @@ export class MiniMap {
     // Center dot
     this.ctx.fillStyle = 'rgba(255,255,255,0.9)'
     this.ctx.fillRect(tx - 1, tz - 1, 3, 3)
+
+    // Citizen count overlay at bottom-left of minimap
+    if (citizenCount > 0) {
+      this.ctx.fillStyle = 'rgba(0,0,0,0.55)'
+      this.ctx.fillRect(2, MAP_PX - 18, 72, 16)
+      this.ctx.fillStyle = 'rgba(255,255,255,0.8)'
+      this.ctx.font = '10px monospace'
+      this.ctx.fillText(`👤 ${citizenCount}`, 6, MAP_PX - 6)
+    }
   }
 
   dispose(): void {
