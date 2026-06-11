@@ -24,6 +24,10 @@ export class HUD {
   private activityCommutingEl: HTMLSpanElement | null = null
   private activityAtHomeEl: HTMLSpanElement | null = null
   private activityAtWorkEl: HTMLSpanElement | null = null
+  private activityLogEl: HTMLDivElement | null = null
+  private activityLogEntries: string[] = []
+  private saveIndicatorEl: HTMLDivElement | null = null
+  private saveIndicatorTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor() {
     this.el = document.createElement('div')
@@ -258,10 +262,26 @@ export class HUD {
     body.appendChild(mkRow('🏠', 'hud-act-home'))
     body.appendChild(mkRow('🏪', 'hud-act-work'))
 
-    const explainer = document.createElement('div')
-    explainer.style.cssText = 'margin-top:6px;font-size:10px;color:rgba(255,255,255,0.35);line-height:1.5'
-    explainer.textContent = 'Residents leave home → travel to shops → return. Each trip generates tax income.'
-    body.appendChild(explainer)
+    const sep = document.createElement('div')
+    sep.style.cssText = 'border-top:1px solid rgba(255,255,255,0.1);margin:5px 0 3px'
+    body.appendChild(sep)
+
+    const logLabel = document.createElement('div')
+    logLabel.style.cssText = 'font-size:10px;letter-spacing:0.06em;color:rgba(255,255,255,0.3);text-transform:uppercase;margin-bottom:2px'
+    logLabel.textContent = 'Recent Events'
+    body.appendChild(logLabel)
+
+    const logEl = document.createElement('div')
+    logEl.style.cssText = [
+      'max-height:110px', 'overflow-y:auto',
+      'font-size:10px', 'line-height:1.6',
+      'color:rgba(255,255,255,0.6)',
+      'scrollbar-width:none',
+    ].join(';')
+    body.appendChild(logEl)
+    this.activityLogEl = logEl
+    this.activityLogEntries = ['🛤 Residents commute to shops along roads — each trip earns taxes']
+    logEl.textContent = this.activityLogEntries[0]
 
     panel.append(header, body)
     document.body.appendChild(panel)
@@ -269,6 +289,45 @@ export class HUD {
     this.activityCommutingEl = document.getElementById('hud-act-commuting') as HTMLSpanElement
     this.activityAtHomeEl    = document.getElementById('hud-act-home')      as HTMLSpanElement
     this.activityAtWorkEl    = document.getElementById('hud-act-work')      as HTMLSpanElement
+  }
+
+  /** Prepends a plain-language event to the activity log (max 10 entries). */
+  logActivity(message: string): void {
+    if (!this.activityLogEl) return
+    this.activityLogEntries.unshift(message)
+    if (this.activityLogEntries.length > 10) this.activityLogEntries.pop()
+    this.activityLogEl.innerHTML = this.activityLogEntries
+      .map((e, i) => `<div style="opacity:${1 - i * 0.08};padding:1px 0">${e}</div>`)
+      .join('')
+    this.activityLogEl.scrollTop = 0
+  }
+
+  /** Shows a brief non-intrusive "✓ Saved" badge at the bottom-right. */
+  showSaveIndicator(): void {
+    if (this.saveIndicatorTimer !== null) {
+      clearTimeout(this.saveIndicatorTimer)
+      this.saveIndicatorEl?.remove()
+    }
+    const el = document.createElement('div')
+    el.style.cssText = [
+      'position:fixed', 'bottom:16px', 'right:16px',
+      'background:rgba(20,160,60,0.88)',
+      'color:#fff', 'font-family:monospace', 'font-size:11px',
+      'padding:4px 10px', 'border-radius:3px',
+      'pointer-events:none', 'z-index:150',
+      'opacity:1', 'transition:opacity 0.4s',
+    ].join(';')
+    el.textContent = '✓ Saved'
+    document.body.appendChild(el)
+    this.saveIndicatorEl = el
+    this.saveIndicatorTimer = setTimeout(() => {
+      el.style.opacity = '0'
+      setTimeout(() => {
+        el.remove()
+        if (this.saveIndicatorEl === el) this.saveIndicatorEl = null
+        this.saveIndicatorTimer = null
+      }, 400)
+    }, 1_200)
   }
 
   updateCitizenActivity(commuting: number, atHome: number, atWork: number): void {
@@ -284,5 +343,7 @@ export class HUD {
     this.activityPanel?.remove()
     if (this.notificationTimer !== null) clearTimeout(this.notificationTimer)
     this.notificationEl?.remove()
+    if (this.saveIndicatorTimer !== null) clearTimeout(this.saveIndicatorTimer)
+    this.saveIndicatorEl?.remove()
   }
 }

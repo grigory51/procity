@@ -37,6 +37,15 @@ export class SaveSystem {
     this.scheduleSave()
   }
 
+  /** Flushes a pending debounced save immediately. Safe to call when no save is pending. */
+  flush(): void {
+    if (this._timer !== null) {
+      clearTimeout(this._timer)
+      this._timer = null
+      this._saveFn()
+    }
+  }
+
   dispose(): void {
     if (this._timer !== null) {
       clearTimeout(this._timer)
