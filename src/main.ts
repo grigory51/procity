@@ -1,6 +1,7 @@
 import { GameEngine } from './engine'
 import { DemoScene, RoadGrid, ZoneManager, CitizenManager } from './game'
-import { GridMap, CellType, RoadGraph, EconomyManager, SimulationEngine, SaveSystem } from './simulation'
+import type { RoadTier } from './game/RoadGrid'
+import { GridMap, CellType, RoadGraph, EconomyManager, SimulationEngine, SaveSystem, isRoadCell } from './simulation'
 import { HUD, MiniMap, StatsPanel, ZoningToolbar } from './ui'
 
 async function main(): Promise<void> {
@@ -36,8 +37,8 @@ async function main(): Promise<void> {
       for (let z = 0; z < gridMap.height; z++) {
         for (let x = 0; x < gridMap.width; x++) {
           const cell = gridMap.get(x, z)
-          if (cell === CellType.ROAD) {
-            roadGrid.restoreAt(x, z)
+          if (isRoadCell(cell)) {
+            roadGrid.restoreAt(x, z)   // restoreAt reads tier from GridMap
           } else if (cell !== CellType.EMPTY) {
             zoneManager.restoreAt(x, z, cell)
           }
@@ -58,6 +59,30 @@ async function main(): Promise<void> {
       simSpeed: sim.speed,
       simPaused: sim.isPaused,
     })
+  })
+
+  // ── Road adjacency notification ────────────────────────────────────────
+
+  zoneManager.onNoRoadAccess(() => {
+    hud.showNotification('🚫 No road access — build a road first', 3_000)
+  })
+
+  // ── Road placement events ──────────────────────────────────────────────
+
+  // Refresh ghost layer so newly placed roads unlock adjacent cells immediately
+  roadGrid.onRoadPlaced(() => {
+    zoneManager.refreshGhostLayer()
+  })
+
+  // ── Urban design one-time tooltips ─────────────────────────────────────
+
+  let roadToolTipShown = false
+  let intersectionTipShown = false
+
+  roadGrid.onIntersectionCreated(() => {
+    if (intersectionTipShown) return
+    intersectionTipShown = true
+    hud.showNotification('🏙 Intersections create the blocks your city grows into', 5_000)
   })
 
   // ── Economy events ──────────────────────────────────────────────────────
@@ -116,10 +141,26 @@ async function main(): Promise<void> {
 
   // ── Zoning toolbar ─────────────────────────────────────────────────────
 
+  const ROAD_TIER_MAP: Record<string, RoadTier> = {
+    road_local:     'local',
+    road_collector: 'collector',
+    road_arterial:  'arterial',
+  }
+
   toolbar.onChange(tool => {
-    if (tool === 'road') {
+    if (tool === 'road_local' || tool === 'road_collector' || tool === 'road_arterial') {
+      roadGrid.setTier(ROAD_TIER_MAP[tool])
       zoneManager.setTool(null)
       roadGrid.activate()
+
+      // First-time road tool tip
+      if (!roadToolTipShown) {
+        roadToolTipShown = true
+        hud.showNotification(
+          '🛤 Build roads first — zones grow along road edges, just like real cities',
+          6_000,
+        )
+      }
     } else if (
       tool === 'residential' ||
       tool === 'commercial' ||
@@ -154,6 +195,8 @@ async function main(): Promise<void> {
       economy.lastIncome,
       economy.lastExpenses,
       economy.fiscalState,
+      economy.lastResidentialIncome,
+      economy.lastCommercialIncome,
     )
     saveSystem.checkVersion(gridMap.version)
   })

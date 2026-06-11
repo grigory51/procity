@@ -72,4 +72,12 @@ export class GridMap {
       z: (cz - HALF_GRID + 0.5) * CELL_SIZE,
     }
   }
+
+  countCellType(type: CellType): number {
+    let count = 0
+    for (let i = 0; i < this.cells.length; i++) {
+      if (this.cells[i] === type) count++
+    }
+    return count
+  }
 }

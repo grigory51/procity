@@ -53,7 +53,7 @@ export class DemoScene {
       scene,
     )
     const gridMat = new GridMaterial('gridMat', scene)
-    gridMat.majorUnitFrequency = 10       // major lines every 10 units (city blocks)
+    gridMat.majorUnitFrequency = 8        // major lines every 8 units (~80m blocks)
     gridMat.minorUnitVisibility = 0.35    // subtle minor (1-unit) lines
     gridMat.gridRatio = 1.0              // 1 minor grid cell = 1 world unit
     gridMat.backFaceCulling = false

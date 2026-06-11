@@ -11,6 +11,7 @@ vi.mock('@babylonjs/core', () => {
       position: { x: 0, y: 0, z: 0 },
       scaling: { x: 1, y: 1, z: 1 },
       material: null,
+      setEnabled: vi.fn(),
       createInstance: vi.fn((iname: string) => ({
         name: iname,
         position: { x: 0, y: 0, z: 0 },
@@ -61,28 +62,38 @@ function createZoneManager() {
   return { zm, gridMap, scene, camera }
 }
 
+/** Adds a local road cell immediately to the right of (cx, cz) so zoneAt can succeed. */
+function addRoadRight(gridMap: GridMap, cx: number, cz: number): void {
+  gridMap.set(cx + 1, cz, CellType.ROAD)
+}
+
 describe('ZoneManager', () => {
   describe('zone painting', () => {
     it('records ZONE_RESIDENTIAL in GridMap after zoning', () => {
       const { zm, gridMap } = createZoneManager()
+      addRoadRight(gridMap, 10, 20)
       ;(zm as any).zoneAt(10, 20, 'residential')
       expect(gridMap.get(10, 20)).toBe(CellType.ZONE_RESIDENTIAL)
     })
 
     it('records ZONE_COMMERCIAL in GridMap', () => {
       const { zm, gridMap } = createZoneManager()
+      addRoadRight(gridMap, 5, 5)
       ;(zm as any).zoneAt(5, 5, 'commercial')
       expect(gridMap.get(5, 5)).toBe(CellType.ZONE_COMMERCIAL)
     })
 
     it('records ZONE_INDUSTRIAL in GridMap', () => {
       const { zm, gridMap } = createZoneManager()
+      addRoadRight(gridMap, 3, 3)
       ;(zm as any).zoneAt(3, 3, 'industrial')
       expect(gridMap.get(3, 3)).toBe(CellType.ZONE_INDUSTRIAL)
     })
 
     it('increments zonedCellCount for each unique cell', () => {
-      const { zm } = createZoneManager()
+      const { zm, gridMap } = createZoneManager()
+      gridMap.set(0, 1, CellType.ROAD)  // road below (0,0)
+      gridMap.set(2, 0, CellType.ROAD)  // road right of (1,0)
       ;(zm as any).zoneAt(0, 0, 'residential')
       ;(zm as any).zoneAt(1, 0, 'residential')
       expect(zm.zonedCellCount).toBe(2)
@@ -98,6 +109,7 @@ describe('ZoneManager', () => {
 
     it('re-zoning a cell to a different type replaces the zone', () => {
       const { zm, gridMap } = createZoneManager()
+      addRoadRight(gridMap, 5, 5)
       ;(zm as any).zoneAt(5, 5, 'residential')
       ;(zm as any).zoneAt(5, 5, 'commercial')
       expect(gridMap.get(5, 5)).toBe(CellType.ZONE_COMMERCIAL)
@@ -106,6 +118,7 @@ describe('ZoneManager', () => {
 
     it('painting the same zone type twice is a no-op (no extra GridMap write)', () => {
       const { zm, gridMap } = createZoneManager()
+      addRoadRight(gridMap, 5, 5)
       ;(zm as any).zoneAt(5, 5, 'residential')
       const versionAfterFirst = gridMap.version
       ;(zm as any).zoneAt(5, 5, 'residential')
@@ -113,16 +126,82 @@ describe('ZoneManager', () => {
     })
   })
 
+  describe('road adjacency enforcement', () => {
+    it('rejects zoning when no road neighbor exists', () => {
+      const { zm, gridMap } = createZoneManager()
+      ;(zm as any).zoneAt(10, 10, 'residential')
+      expect(gridMap.get(10, 10)).toBe(CellType.EMPTY)
+      expect(zm.zonedCellCount).toBe(0)
+    })
+
+    it('accepts zoning when adjacent to ROAD (local)', () => {
+      const { zm, gridMap } = createZoneManager()
+      gridMap.set(10, 11, CellType.ROAD)
+      ;(zm as any).zoneAt(10, 10, 'residential')
+      expect(gridMap.get(10, 10)).toBe(CellType.ZONE_RESIDENTIAL)
+    })
+
+    it('accepts zoning when adjacent to ROAD_COLLECTOR', () => {
+      const { zm, gridMap } = createZoneManager()
+      gridMap.set(10, 11, CellType.ROAD_COLLECTOR)
+      ;(zm as any).zoneAt(10, 10, 'commercial')
+      expect(gridMap.get(10, 10)).toBe(CellType.ZONE_COMMERCIAL)
+    })
+
+    it('accepts zoning when adjacent to ROAD_ARTERIAL', () => {
+      const { zm, gridMap } = createZoneManager()
+      gridMap.set(10, 11, CellType.ROAD_ARTERIAL)
+      ;(zm as any).zoneAt(10, 10, 'industrial')
+      expect(gridMap.get(10, 10)).toBe(CellType.ZONE_INDUSTRIAL)
+    })
+
+    it('only checks 4-directional neighbors (diagonal road is not access)', () => {
+      const { zm, gridMap } = createZoneManager()
+      gridMap.set(11, 11, CellType.ROAD)  // diagonal only
+      ;(zm as any).zoneAt(10, 10, 'residential')
+      expect(gridMap.get(10, 10)).toBe(CellType.EMPTY)
+    })
+
+    it('fires the noRoadAccess callback when placement is rejected', () => {
+      const { zm } = createZoneManager()
+      const cb = vi.fn()
+      zm.onNoRoadAccess(cb)
+      // First attempt fires callback
+      ;(zm as any)._lastNoRoadNotifyMs = 0
+      ;(zm as any).zoneAt(10, 10, 'residential')
+      expect(cb).toHaveBeenCalledTimes(1)
+    })
+
+    it('hasRoadAccess returns false for isolated cell', () => {
+      const { zm } = createZoneManager()
+      expect((zm as any).hasRoadAccess(10, 10)).toBe(false)
+    })
+
+    it('hasRoadAccess returns true when left neighbor is ROAD', () => {
+      const { zm, gridMap } = createZoneManager()
+      gridMap.set(9, 10, CellType.ROAD)
+      expect((zm as any).hasRoadAccess(10, 10)).toBe(true)
+    })
+
+    it('hasRoadAccess returns true when right neighbor is ROAD_ARTERIAL', () => {
+      const { zm, gridMap } = createZoneManager()
+      gridMap.set(11, 10, CellType.ROAD_ARTERIAL)
+      expect((zm as any).hasRoadAccess(10, 10)).toBe(true)
+    })
+  })
+
   describe('demolish', () => {
     it('clears a zoned cell back to EMPTY', () => {
       const { zm, gridMap } = createZoneManager()
+      addRoadRight(gridMap, 10, 10)
       ;(zm as any).zoneAt(10, 10, 'residential')
       ;(zm as any).demolishAt(10, 10)
       expect(gridMap.get(10, 10)).toBe(CellType.EMPTY)
     })
 
     it('decrements zonedCellCount after demolish', () => {
-      const { zm } = createZoneManager()
+      const { zm, gridMap } = createZoneManager()
+      addRoadRight(gridMap, 10, 10)
       ;(zm as any).zoneAt(10, 10, 'residential')
       expect(zm.zonedCellCount).toBe(1)
       ;(zm as any).demolishAt(10, 10)
@@ -142,6 +221,15 @@ describe('ZoneManager', () => {
       const vBefore = gridMap.version
       ;(zm as any).demolishAt(5, 5)
       expect(gridMap.get(5, 5)).toBe(CellType.ROAD)
+      expect(gridMap.version).toBe(vBefore)
+    })
+
+    it('demolish on ROAD_ARTERIAL cell is a no-op', () => {
+      const { zm, gridMap } = createZoneManager()
+      gridMap.set(5, 5, CellType.ROAD_ARTERIAL)
+      const vBefore = gridMap.version
+      ;(zm as any).demolishAt(5, 5)
+      expect(gridMap.get(5, 5)).toBe(CellType.ROAD_ARTERIAL)
       expect(gridMap.version).toBe(vBefore)
     })
   })

@@ -1,7 +1,15 @@
-export type ZoneType = 'residential' | 'commercial' | 'industrial' | 'road' | 'demolish' | null
+export type ZoneType =
+  | 'residential'
+  | 'commercial'
+  | 'industrial'
+  | 'road_local'
+  | 'road_collector'
+  | 'road_arterial'
+  | 'demolish'
+  | null
 
 interface ToolDef {
-  key: ZoneType & string
+  key: Exclude<ZoneType, null>
   label: string
   hotkey: string
   bg: string
@@ -10,15 +18,23 @@ interface ToolDef {
 }
 
 const TOOLS: ToolDef[] = [
-  { key: 'residential', label: 'Residential', hotkey: 'R', bg: '#162616', activeBg: '#1f5c1f', activeBorder: '#4caf50' },
-  { key: 'commercial',  label: 'Commercial',  hotkey: 'C', bg: '#131f36', activeBg: '#1b3d6e', activeBorder: '#4a90d9' },
-  { key: 'industrial',  label: 'Industrial',  hotkey: 'I', bg: '#2e2010', activeBg: '#6b470f', activeBorder: '#f5a623' },
-  { key: 'road',        label: 'Road',        hotkey: 'D', bg: '#1e1e1e', activeBg: '#3d3d3d', activeBorder: '#aaaaaa' },
-  { key: 'demolish',    label: 'Demolish',    hotkey: 'X', bg: '#2e1010', activeBg: '#6b1010', activeBorder: '#e53935' },
+  { key: 'residential',   label: 'Residential',  hotkey: 'R', bg: '#162616', activeBg: '#1f5c1f', activeBorder: '#4caf50' },
+  { key: 'commercial',    label: 'Commercial',   hotkey: 'C', bg: '#131f36', activeBg: '#1b3d6e', activeBorder: '#4a90d9' },
+  { key: 'industrial',    label: 'Industrial',   hotkey: 'I', bg: '#2e2010', activeBg: '#6b470f', activeBorder: '#f5a623' },
+  { key: 'road_local',    label: '🛤 Local',     hotkey: 'D', bg: '#1e1e1e', activeBg: '#3d3d3d', activeBorder: '#aaaaaa' },
+  { key: 'road_collector',label: '🛣 Collector', hotkey: 'E', bg: '#1e1e1e', activeBg: '#3d3d3d', activeBorder: '#cccccc' },
+  { key: 'road_arterial', label: '🛣 Arterial',  hotkey: 'F', bg: '#221a10', activeBg: '#4a3a18', activeBorder: '#f5c842' },
+  { key: 'demolish',      label: 'Demolish',     hotkey: 'X', bg: '#2e1010', activeBg: '#6b1010', activeBorder: '#e53935' },
 ]
 
-const HOTKEY_MAP: Record<string, ZoneType & string> = {
-  r: 'residential', c: 'commercial', i: 'industrial', d: 'road', x: 'demolish',
+const HOTKEY_MAP: Record<string, Exclude<ZoneType, null>> = {
+  r: 'residential',
+  c: 'commercial',
+  i: 'industrial',
+  d: 'road_local',
+  e: 'road_collector',
+  f: 'road_arterial',
+  x: 'demolish',
 }
 
 export class ZoningToolbar {

@@ -1,4 +1,4 @@
-import { CellType, GridMap } from './GridMap'
+import { CellType, GridMap, isRoadCell } from './GridMap'
 
 export type FiscalState = 'surplus' | 'deficit' | 'bankruptcy'
 
@@ -28,11 +28,15 @@ export const TAX_CYCLE_SECONDS = 30
 const BANKRUPTCY_THRESHOLD = -1_000
 // Density multiplier caps at 2× when zone has this many cells
 const MAX_DENSITY_CELLS = 200
+// Arterial roads boost adjacent commercial tax yield by 50%
+const ARTERIAL_COMMERCIAL_BONUS = 0.5
 
 export class EconomyManager {
   private _balance: number
   private _lastIncome = 0
   private _lastExpenses = 0
+  private _lastResidentialIncome = 0
+  private _lastCommercialIncome = 0
   private _state: FiscalState = 'surplus'
   private _elapsed = 0
   private _taxRates: TaxRates
@@ -52,6 +56,8 @@ export class EconomyManager {
   get balance(): number { return this._balance }
   get lastIncome(): number { return this._lastIncome }
   get lastExpenses(): number { return this._lastExpenses }
+  get lastResidentialIncome(): number { return this._lastResidentialIncome }
+  get lastCommercialIncome(): number { return this._lastCommercialIncome }
   get fiscalState(): FiscalState { return this._state }
   get taxRates(): Readonly<TaxRates> { return this._taxRates }
   /** Seconds remaining until next tax cycle fires */
@@ -74,9 +80,14 @@ export class EconomyManager {
 
   private _runCycle(): void {
     const counts = this._countCells()
-    const income = this._computeIncome(counts)
+    const arterialBonus = this._computeArterialBonus()
+    const income = this._computeIncome(counts) + arterialBonus
     const expenses = counts.roads * this._taxRates.roadMaintenance
     const net = income - expenses
+
+    const r = this._taxRates
+    this._lastResidentialIncome = counts.residential * r.residential * this._densityMultiplier(counts.residential)
+    this._lastCommercialIncome  = counts.commercial  * r.commercial  * this._densityMultiplier(counts.commercial) + arterialBonus
 
     this._balance += net
     this._lastIncome = income
@@ -115,6 +126,30 @@ export class EconomyManager {
   }
 
   /**
+   * Arterial road adjacency bonus: each commercial cell next to an arterial earns +50% of its
+   * base commercial tax rate. Encourages players to route arterials through commercial areas.
+   * Example: 10 commercial cells adjacent to arterials × $25 × 0.5 = $125 bonus per cycle.
+   */
+  private _computeArterialBonus(): number {
+    let bonus = 0
+    const { width, height } = this.gridMap
+    const r = this._taxRates
+    for (let z = 0; z < height; z++) {
+      for (let x = 0; x < width; x++) {
+        if (this.gridMap.get(x, z) !== CellType.ZONE_COMMERCIAL) continue
+        const neighbors = [
+          { x: x - 1, z }, { x: x + 1, z },
+          { x, z: z - 1 }, { x, z: z + 1 },
+        ]
+        if (neighbors.some(n => this.gridMap.get(n.x, n.z) === CellType.ROAD_ARTERIAL)) {
+          bonus += r.commercial * ARTERIAL_COMMERCIAL_BONUS
+        }
+      }
+    }
+    return bonus
+  }
+
+  /**
    * Density bonus: each zone type earns more per cell as more of that type is built.
    * Scales linearly from 1× (0 cells) to 2× (MAX_DENSITY_CELLS+).
    */
@@ -138,11 +173,14 @@ export class EconomyManager {
     const { width, height } = this.gridMap
     for (let z = 0; z < height; z++) {
       for (let x = 0; x < width; x++) {
-        switch (this.gridMap.get(x, z)) {
+        const cell = this.gridMap.get(x, z)
+        switch (cell) {
           case CellType.ZONE_RESIDENTIAL: residential++; break
           case CellType.ZONE_COMMERCIAL:  commercial++;  break
           case CellType.ZONE_INDUSTRIAL:  industrial++;  break
-          case CellType.ROAD:             roads++;        break
+          default:
+            if (isRoadCell(cell)) roads++
+            break
         }
       }
     }

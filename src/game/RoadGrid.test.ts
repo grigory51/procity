@@ -59,7 +59,7 @@ function createRoadGrid() {
 
 describe('RoadGrid', () => {
   describe('placeRoadAtPointer guard', () => {
-    it('places ROAD on an EMPTY cell', () => {
+    it('places ROAD (local tier) on an EMPTY cell by default', () => {
       const { rg, gridMap } = createRoadGrid()
       ;(rg as any).placeRoadAt(100, 100)
       expect(gridMap.get(100, 100)).toBe(CellType.ROAD)
@@ -96,6 +96,80 @@ describe('RoadGrid', () => {
       gridMap.set(5, 5, CellType.ZONE_INDUSTRIAL)
       ;(rg as any).placeRoadAt(5, 5)
       expect(gridMap.get(5, 5)).toBe(CellType.ZONE_INDUSTRIAL)
+    })
+  })
+
+  describe('road tiers', () => {
+    it('places ROAD_COLLECTOR when tier is set to collector', () => {
+      const { rg, gridMap } = createRoadGrid()
+      rg.setTier('collector')
+      ;(rg as any).placeRoadAt(50, 50)
+      expect(gridMap.get(50, 50)).toBe(CellType.ROAD_COLLECTOR)
+    })
+
+    it('places ROAD_ARTERIAL when tier is set to arterial', () => {
+      const { rg, gridMap } = createRoadGrid()
+      rg.setTier('arterial')
+      ;(rg as any).placeRoadAt(50, 50)
+      expect(gridMap.get(50, 50)).toBe(CellType.ROAD_ARTERIAL)
+    })
+
+    it('defaults back to ROAD (local) without explicit setTier call', () => {
+      const { rg, gridMap } = createRoadGrid()
+      ;(rg as any).placeRoadAt(10, 10)
+      expect(gridMap.get(10, 10)).toBe(CellType.ROAD)
+    })
+  })
+
+  describe('intersection detection', () => {
+    it('fires onIntersectionCreated when a road connects 2+ existing roads', () => {
+      const { rg, gridMap } = createRoadGrid()
+      const cb = vi.fn()
+      rg.onIntersectionCreated(cb)
+
+      // Place 3 roads in a row: at (10,10), (12,10), then (11,10) connects them
+      gridMap.set(10, 10, CellType.ROAD)
+      gridMap.set(12, 10, CellType.ROAD)
+      ;(rg as any).placeRoadAt(11, 10)
+      expect(cb).toHaveBeenCalledTimes(1)
+    })
+
+    it('does NOT fire when a road connects only 1 existing road', () => {
+      const { rg, gridMap } = createRoadGrid()
+      const cb = vi.fn()
+      rg.onIntersectionCreated(cb)
+
+      gridMap.set(10, 10, CellType.ROAD)
+      ;(rg as any).placeRoadAt(11, 10)
+      expect(cb).not.toHaveBeenCalled()
+    })
+
+    it('does NOT fire when road is placed in isolation', () => {
+      const { rg } = createRoadGrid()
+      const cb = vi.fn()
+      rg.onIntersectionCreated(cb)
+      ;(rg as any).placeRoadAt(50, 50)
+      expect(cb).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('onRoadPlaced callback', () => {
+    it('fires after each successful road placement', () => {
+      const { rg } = createRoadGrid()
+      const cb = vi.fn()
+      rg.onRoadPlaced(cb)
+      ;(rg as any).placeRoadAt(10, 10)
+      ;(rg as any).placeRoadAt(11, 10)
+      expect(cb).toHaveBeenCalledTimes(2)
+    })
+
+    it('does NOT fire when placement is a no-op', () => {
+      const { rg, gridMap } = createRoadGrid()
+      const cb = vi.fn()
+      rg.onRoadPlaced(cb)
+      gridMap.set(10, 10, CellType.ROAD)
+      ;(rg as any).placeRoadAt(10, 10)
+      expect(cb).not.toHaveBeenCalled()
     })
   })
 })
