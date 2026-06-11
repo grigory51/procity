@@ -13,6 +13,7 @@ import {
 import { CellType, GridMap, isRoadCell } from '../simulation'
 
 export type RoadTier = 'local' | 'collector' | 'arterial'
+export type RoadMode = 'place' | 'upgrade'
 
 const TIER_CELL_TYPE: Record<RoadTier, CellType> = {
   local:     CellType.ROAD,
@@ -41,11 +42,13 @@ export class RoadGrid {
   private sourceMeshes: Map<RoadTier, Mesh> = new Map()
   private roadInstances: Map<string, InstancedMesh> = new Map()
   private currentTier: RoadTier = 'local'
+  private currentMode: RoadMode = 'place'
   private isDragging = false
   private active = false
   private pointerObserver: Observer<PointerInfo> | null = null
   private _onRoadPlacedCb: (() => void) | null = null
   private _onIntersectionCb: (() => void) | null = null
+  private _onRoadUpgradedCb: (() => void) | null = null
 
   constructor(scene: Scene, camera: ArcRotateCamera, gridMap: GridMap, ground: Mesh) {
     this.scene = scene
@@ -63,6 +66,11 @@ export class RoadGrid {
 
   setTier(tier: RoadTier): void {
     this.currentTier = tier
+    this.currentMode = 'place'
+  }
+
+  setMode(mode: RoadMode): void {
+    this.currentMode = mode
   }
 
   onRoadPlaced(cb: () => void): void {
@@ -71,6 +79,10 @@ export class RoadGrid {
 
   onIntersectionCreated(cb: () => void): void {
     this._onIntersectionCb = cb
+  }
+
+  onRoadUpgraded(cb: () => void): void {
+    this._onRoadUpgradedCb = cb
   }
 
   activate(): void {
@@ -135,7 +147,28 @@ export class RoadGrid {
     )
     if (!pick.hit || !pick.pickedPoint) return
     const { x, z } = this.gridMap.worldToCell(pick.pickedPoint.x, pick.pickedPoint.z)
-    this.placeRoadAt(x, z)
+    if (this.currentMode === 'upgrade') {
+      this.upgradeRoadAt(x, z)
+    } else {
+      this.placeRoadAt(x, z)
+    }
+  }
+
+  private upgradeRoadAt(cx: number, cz: number): void {
+    const current = this.gridMap.get(cx, cz)
+    let nextTier: RoadTier | null = null
+    if (current === CellType.ROAD) nextTier = 'collector'
+    else if (current === CellType.ROAD_COLLECTOR) nextTier = 'arterial'
+    if (!nextTier) return
+
+    const key = `${cx},${cz}`
+    const oldInst = this.roadInstances.get(key)
+    if (oldInst) { oldInst.dispose(); this.roadInstances.delete(key) }
+
+    this.gridMap.set(cx, cz, TIER_CELL_TYPE[nextTier])
+    this.spawnRoadMesh(cx, cz, nextTier)
+    this._onRoadUpgradedCb?.()
+    this._onRoadPlacedCb?.()  // refresh ghost layer
   }
 
   private placeRoadAt(cx: number, cz: number): void {

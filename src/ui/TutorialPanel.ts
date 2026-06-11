@@ -1,9 +1,11 @@
 const STORAGE_KEY = 'city-tutorial-seen'
 
 const STEPS = [
-  { icon: '🛣️', text: 'Build roads first — zones only grow next to roads' },
-  { icon: '🏠', text: 'Zone residential areas for housing' },
-  { icon: '🏪', text: 'Add commercial zones near residential — citizens need shops' },
+  { icon: '🛣️', text: 'Start with an arterial road — the city\'s backbone [F]' },
+  { icon: '🔀', text: 'Branch collector roads off arterials — unlocks commercial zones [E]' },
+  { icon: '🏘️', text: 'Add local roads to unlock residential housing [D]' },
+  { icon: '🏠', text: 'Zone residential along local roads; commercial needs collector+' },
+  { icon: '⬆️', text: 'Upgrade existing roads to unlock higher-tier zones [U]' },
   { icon: '💰', text: 'Watch your balance — expenses grow with city size' },
 ]
 

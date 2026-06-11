@@ -5,6 +5,7 @@ export type ZoneType =
   | 'road_local'
   | 'road_collector'
   | 'road_arterial'
+  | 'road_upgrade'
   | 'demolish'
   | null
 
@@ -24,6 +25,7 @@ const TOOLS: ToolDef[] = [
   { key: 'road_local',    label: '🛤 Local',     hotkey: 'D', bg: '#1e1e1e', activeBg: '#3d3d3d', activeBorder: '#aaaaaa' },
   { key: 'road_collector',label: '🛣 Collector', hotkey: 'E', bg: '#1e1e1e', activeBg: '#3d3d3d', activeBorder: '#cccccc' },
   { key: 'road_arterial', label: '🛣 Arterial',  hotkey: 'F', bg: '#221a10', activeBg: '#4a3a18', activeBorder: '#f5c842' },
+  { key: 'road_upgrade',  label: '⬆ Upgrade',   hotkey: 'U', bg: '#181e2a', activeBg: '#2a3a5c', activeBorder: '#7eb8f7' },
   { key: 'demolish',      label: 'Demolish',     hotkey: 'X', bg: '#2e1010', activeBg: '#6b1010', activeBorder: '#e53935' },
 ]
 
@@ -34,6 +36,7 @@ const HOTKEY_MAP: Record<string, Exclude<ZoneType, null>> = {
   d: 'road_local',
   e: 'road_collector',
   f: 'road_arterial',
+  u: 'road_upgrade',
   x: 'demolish',
 }
 

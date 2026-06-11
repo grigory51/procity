@@ -36,9 +36,17 @@ const OVERLAY_COLORS: Color3[] = [
 ]
 const OVERLAY_ALPHA = 0.30
 
-// Ghost layer: subtle green tint on road-accessible EMPTY cells
-const GHOST_COLOR = new Color3(0.20, 0.85, 0.30)
-const GHOST_ALPHA  = 0.22
+// Ghost layer: tier-colored tints on road-accessible EMPTY cells
+// blue = residential, green = commercial, yellow = industrial
+const GHOST_COLORS: [Color3, Color3, Color3] = [
+  new Color3(0.18, 0.42, 0.92), // blue — residential (local+)
+  new Color3(0.12, 0.80, 0.28), // green — commercial (collector+)
+  new Color3(0.95, 0.78, 0.08), // yellow — industrial (arterial)
+]
+const GHOST_ALPHA = 0.28
+
+/** 0=residential 1=commercial 2=industrial, or -1 if no road access */
+type AccessTier = -1 | 0 | 1 | 2
 
 export class ZoneManager {
   private scene: Scene
@@ -54,13 +62,14 @@ export class ZoneManager {
   private active = false
   private pointerObserver: Observer<PointerInfo> | null = null
 
-  // Ghost layer (road-access hints shown while zoning tool is active)
-  private ghostSource: Mesh | null = null
-  private ghostMat: StandardMaterial | null = null
+  // Ghost layer: one source mesh per tier (blue/green/yellow)
+  private ghostSources: [Mesh | null, Mesh | null, Mesh | null] = [null, null, null]
+  private ghostMats: [StandardMaterial | null, StandardMaterial | null, StandardMaterial | null] = [null, null, null]
   private ghostInstances: Map<string, InstancedMesh> = new Map()
 
   // Callbacks
   private _noRoadAccessCb: (() => void) | null = null
+  private _wrongTierCb: ((zone: Exclude<ZoneTool, 'demolish'>, needed: string) => void) | null = null
   private _lastNoRoadNotifyMs = 0
 
   constructor(scene: Scene, camera: ArcRotateCamera, gridMap: GridMap, ground: Mesh) {
@@ -87,6 +96,11 @@ export class ZoneManager {
   /** Register a callback that fires (throttled to 2s) when zoning is rejected due to no road access. */
   onNoRoadAccess(cb: () => void): void {
     this._noRoadAccessCb = cb
+  }
+
+  /** Register a callback that fires when a zone is rejected because the adjacent road tier is too low. */
+  onWrongRoadTier(cb: (zone: Exclude<ZoneTool, 'demolish'>, needed: string) => void): void {
+    this._wrongTierCb = cb
   }
 
   setTool(tool: ZoneTool | null): void {
@@ -159,12 +173,20 @@ export class ZoneManager {
     }
   }
 
-  private hasRoadAccess(cx: number, cz: number): boolean {
+  /** Returns the highest zone tier accessible from (cx,cz): 2=industrial, 1=commercial, 0=residential, -1=none */
+  private bestAccessTier(cx: number, cz: number): AccessTier {
     const neighbors = [
       { x: cx - 1, z: cz }, { x: cx + 1, z: cz },
       { x: cx, z: cz - 1 }, { x: cx, z: cz + 1 },
     ]
-    return neighbors.some(n => isRoadCell(this.gridMap.get(n.x, n.z)))
+    let best: AccessTier = -1
+    for (const n of neighbors) {
+      const cell = this.gridMap.get(n.x, n.z)
+      if (cell === CellType.ROAD_ARTERIAL && best < 2) best = 2
+      else if (cell === CellType.ROAD_COLLECTOR && best < 1) best = 1
+      else if (cell === CellType.ROAD && best < 0) best = 0
+    }
+    return best
   }
 
   /** Recreates building + overlay visuals for a saved zone cell without modifying GridMap. */
@@ -177,16 +199,39 @@ export class ZoneManager {
     this.overlays.set(key, this.createOverlayQuad(key, x, z, zone))
   }
 
+  // Minimum access tier required per zone type
+  private static readonly ZONE_MIN_TIER: Record<Exclude<ZoneTool, 'demolish'>, AccessTier> = {
+    residential: 0,
+    commercial:  1,
+    industrial:  2,
+  }
+
+  private static readonly ZONE_TIER_LABEL: Record<1 | 2, string> = {
+    1: 'a collector or arterial road',
+    2: 'an arterial road',
+  }
+
   private zoneAt(cx: number, cz: number, tool: Exclude<ZoneTool, 'demolish'>): void {
     const cellType = TOOL_TO_CELL[tool]
     const current = this.gridMap.get(cx, cz)
     if (isRoadCell(current)) return      // never overwrite roads
     if (current === cellType) return     // already this zone, skip
 
-    if (!this.hasRoadAccess(cx, cz)) {
-      const now = Date.now()
+    const tier = this.bestAccessTier(cx, cz)
+    const now = Date.now()
+
+    if (tier < 0) {
       if (now - this._lastNoRoadNotifyMs > 2_000) {
         this._noRoadAccessCb?.()
+        this._lastNoRoadNotifyMs = now
+      }
+      return
+    }
+
+    const minTier = ZoneManager.ZONE_MIN_TIER[tool]
+    if (tier < minTier) {
+      if (now - this._lastNoRoadNotifyMs > 2_000) {
+        this._wrongTierCb?.(tool, ZoneManager.ZONE_TIER_LABEL[minTier as 1 | 2])
         this._lastNoRoadNotifyMs = now
       }
       return
@@ -212,9 +257,10 @@ export class ZoneManager {
     this.removeVisuals(key)
     this.gridMap.set(cx, cz, CellType.EMPTY)
 
-    // Restored cell is now EMPTY — show ghost if it has road access
-    if (this.active && this.hasRoadAccess(cx, cz)) {
-      this.addGhostAt(cx, cz, key)
+    // Restored cell is now EMPTY — show ghost at the appropriate tier
+    if (this.active) {
+      const tier = this.bestAccessTier(cx, cz)
+      if (tier >= 0) this.addGhostAt(cx, cz, key, tier as 0 | 1 | 2)
     }
   }
 
@@ -239,37 +285,40 @@ export class ZoneManager {
     return quad
   }
 
-  // ── Ghost layer (road-access hint overlay) ────────────────────────────────
+  // ── Ghost layer (road-access hint overlay, tier-colored) ─────────────────
 
   private initGhostLayer(): void {
-    const mat = new StandardMaterial('ghostAccessMat', this.scene)
-    mat.diffuseColor = GHOST_COLOR
-    mat.alpha = GHOST_ALPHA
-    mat.backFaceCulling = false
-    mat.disableLighting = true
-    this.ghostMat = mat
+    const tierNames = ['res', 'com', 'ind'] as const
+    for (let i = 0; i < 3; i++) {
+      const mat = new StandardMaterial(`ghostMat_${tierNames[i]}`, this.scene)
+      mat.diffuseColor = GHOST_COLORS[i]
+      mat.alpha = GHOST_ALPHA
+      mat.backFaceCulling = false
+      mat.disableLighting = true
+      this.ghostMats[i] = mat
 
-    const mesh = MeshBuilder.CreateGround(
-      'ghostAccessSource',
-      { width: 0.95, height: 0.95 },
-      this.scene,
-    )
-    mesh.material = mat
-    mesh.isPickable = false
-    mesh.setEnabled(false)
-    this.ghostSource = mesh
+      const mesh = MeshBuilder.CreateGround(
+        `ghostSource_${tierNames[i]}`,
+        { width: 0.95, height: 0.95 },
+        this.scene,
+      )
+      mesh.material = mat
+      mesh.isPickable = false
+      mesh.setEnabled(false)
+      this.ghostSources[i] = mesh
+    }
   }
 
   private buildGhostLayer(): void {
     this.clearGhostLayer()
-    if (!this.ghostSource) return
     const { width, height } = this.gridMap
     for (let z = 0; z < height; z++) {
       for (let x = 0; x < width; x++) {
         if (this.gridMap.get(x, z) !== CellType.EMPTY) continue
-        if (!this.hasRoadAccess(x, z)) continue
+        const tier = this.bestAccessTier(x, z)
+        if (tier < 0) continue
         const key = `${x},${z}`
-        this.addGhostAt(x, z, key)
+        this.addGhostAt(x, z, key, tier as 0 | 1 | 2)
       }
     }
   }
@@ -279,10 +328,11 @@ export class ZoneManager {
     this.ghostInstances.clear()
   }
 
-  private addGhostAt(cx: number, cz: number, key: string): void {
-    if (!this.ghostSource || this.ghostInstances.has(key)) return
+  private addGhostAt(cx: number, cz: number, key: string, tier: 0 | 1 | 2): void {
+    const source = this.ghostSources[tier]
+    if (!source || this.ghostInstances.has(key)) return
     const { x, z } = this.gridMap.cellToWorld(cx, cz)
-    const inst = this.ghostSource.createInstance(`ghost_${key}`)
+    const inst = source.createInstance(`ghost_${key}`)
     inst.position.x = x
     inst.position.y = 0.01
     inst.position.z = z
@@ -302,7 +352,7 @@ export class ZoneManager {
     for (const key of [...this.buildings.keys()]) this.removeVisuals(key)
     this.buildingSystem.dispose()
     for (const mat of this.overlayMaterials) mat.dispose()
-    this.ghostSource?.dispose()
-    this.ghostMat?.dispose()
+    for (const source of this.ghostSources) source?.dispose()
+    for (const mat of this.ghostMats) mat?.dispose()
   }
 }

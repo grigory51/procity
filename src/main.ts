@@ -64,12 +64,23 @@ async function main(): Promise<void> {
       simSpeed: sim.speed,
       simPaused: sim.isPaused,
     })
+    hud.showSaveIndicator()
   })
+
+  // Flush any pending debounced save before the page unloads so rapid
+  // reloads do not lose the last changes (debounce would otherwise be
+  // cancelled by the browser before it fires).
+  window.addEventListener('beforeunload', () => { saveSystem.flush() })
 
   // ── Road adjacency notification ────────────────────────────────────────
 
   zoneManager.onNoRoadAccess(() => {
     hud.showNotification('🚫 No road access — build a road first', 3_000)
+  })
+
+  zoneManager.onWrongRoadTier((zone, needed) => {
+    const zoneName = zone.charAt(0).toUpperCase() + zone.slice(1)
+    hud.showNotification(`🚫 ${zoneName} zones need ${needed}`, 3_000)
   })
 
   // ── Road placement events ──────────────────────────────────────────────
@@ -152,6 +163,8 @@ async function main(): Promise<void> {
     road_arterial:  'arterial',
   }
 
+  let upgradeTipShown = false
+
   toolbar.onChange(tool => {
     if (tool === 'road_local' || tool === 'road_collector' || tool === 'road_arterial') {
       roadGrid.setTier(ROAD_TIER_MAP[tool])
@@ -166,6 +179,15 @@ async function main(): Promise<void> {
           6_000,
         )
       }
+    } else if (tool === 'road_upgrade') {
+      roadGrid.setMode('upgrade')
+      zoneManager.setTool(null)
+      roadGrid.activate()
+
+      if (!upgradeTipShown) {
+        upgradeTipShown = true
+        hud.showNotification('⬆ Click a local road to upgrade it to collector, or collector to arterial', 5_000)
+      }
     } else if (
       tool === 'residential' ||
       tool === 'commercial' ||
@@ -178,6 +200,10 @@ async function main(): Promise<void> {
       roadGrid.deactivate()
       zoneManager.setTool(null)
     }
+  })
+
+  roadGrid.onRoadUpgraded(() => {
+    zoneManager.refreshGhostLayer()
   })
 
   // ── Render loop ────────────────────────────────────────────────────────
