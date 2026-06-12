@@ -56,7 +56,7 @@ interface Citizen {
   readonly shopCell:        { x: number; z: number } | null
   readonly shopGoPath:      PathNode[] | null  // homeRoad → shopRoad
   readonly shopReturnPath:  PathNode[] | null  // shopRoad → homeRoad
-  readonly sideOffset:      number  // +0.3 or -0.3, alternating; lateral sidewalk offset
+  readonly sideOffset:      number  // +0.40 or -0.40, alternating; lateral sidewalk offset
   state:        State
   pathProgress: number   // fractional node index [0 .. path.length-1]
   dwellTimer:   number   // seconds remaining in AtWork / AtHome / Shopping
@@ -107,7 +107,7 @@ export class CitizenManager {
     this.matShopping.emissiveColor = new Color3(0.50, 0.35, 0.05)
     this.matShopping.specularColor = new Color3(0.20, 0.20, 0.20)
 
-    this.template            = MeshBuilder.CreateSphere('citizenTemplate', { diameter: 0.22, segments: 4 }, scene)
+    this.template            = MeshBuilder.CreateSphere('citizenTemplate', { diameter: 0.08, segments: 4 }, scene)
     this.template.material   = this.matCommuting
     this.template.isPickable = false
     this.template.setEnabled(false)
@@ -275,7 +275,7 @@ export class CitizenManager {
     const px  = len > 0 ? -dz / len : 0
     const pz  = len > 0 ?  dx / len : 0
     c.marker.position.x = a.x + (b.x - a.x) * t + c.sideOffset * px
-    c.marker.position.y = 0.25
+    c.marker.position.y = 0.09
     c.marker.position.z = a.z + (b.z - a.z) * t + c.sideOffset * pz
   }
 
@@ -300,7 +300,7 @@ export class CitizenManager {
       const last = path[path.length - 1]
       const wp   = this.gridMap.cellToWorld(last.x, last.z)
       c.marker.position.x = wp.x + c.sideOffset * px
-      c.marker.position.y = 0.25
+      c.marker.position.y = 0.09
       c.marker.position.z = wp.z + c.sideOffset * pz
     }
   }
@@ -314,7 +314,7 @@ export class CitizenManager {
     const { px, pz }  = this._perpAtPathNode(path, 0)
     const wp          = this.gridMap.cellToWorld(path[0].x, path[0].z)
     c.marker.position.x = wp.x + c.sideOffset * px
-    c.marker.position.y = 0.25
+    c.marker.position.y = 0.09
     c.marker.position.z = wp.z + c.sideOffset * pz
   }
 
@@ -326,7 +326,7 @@ export class CitizenManager {
     const { px, pz }  = this._perpAtPathNode(path, 0)
     const wp          = this.gridMap.cellToWorld(path[0].x, path[0].z)
     c.marker.position.x = wp.x + c.sideOffset * px
-    c.marker.position.y = 0.25
+    c.marker.position.y = 0.09
     c.marker.position.z = wp.z + c.sideOffset * pz
   }
 
@@ -338,7 +338,7 @@ export class CitizenManager {
     const { px, pz }  = this._perpAtPathNode(path, 0)
     const wp          = this.gridMap.cellToWorld(path[0].x, path[0].z)
     c.marker.position.x = wp.x + c.sideOffset * px
-    c.marker.position.y = 0.25
+    c.marker.position.y = 0.09
     c.marker.position.z = wp.z + c.sideOffset * pz
   }
 
@@ -384,11 +384,11 @@ export class CitizenManager {
 
       const shopInfo = this.findShopDestination(home, work, commercialZones)
 
-      const sideOffset  = (this.citizens.length % 2 === 0) ? 0.3 : -0.3
+      const sideOffset  = (this.citizens.length % 2 === 0) ? 0.40 : -0.40
       const startWp     = this.gridMap.cellToWorld(path[0].x, path[0].z)
       const { px, pz }  = this._perpAtPathNode(path, 0)
       const marker      = this.template.createInstance(`citizen_${this.nextInstanceId++}`)
-      marker.position   = new Vector3(startWp.x + sideOffset * px, 0.25, startWp.z + sideOffset * pz)
+      marker.position   = new Vector3(startWp.x + sideOffset * px, 0.09, startWp.z + sideOffset * pz)
       marker.isPickable = false
 
       this.citizens.push({

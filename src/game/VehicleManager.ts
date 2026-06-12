@@ -80,7 +80,7 @@ export class VehicleManager {
     this.matParked.diffuseColor  = new Color3(0.3, 0.3, 0.3)
     this.matParked.specularColor = new Color3(0.10, 0.10, 0.10)
 
-    this.template            = MeshBuilder.CreateBox('vehicleTemplate', { width: 0.22, height: 0.12, depth: 0.40 }, scene)
+    this.template            = MeshBuilder.CreateBox('vehicleTemplate', { width: 0.16, height: 0.08, depth: 0.32 }, scene)
     this.template.material   = this.matCommuting
     this.template.isPickable = false
     this.template.setEnabled(false)
@@ -166,7 +166,7 @@ export class VehicleManager {
       const node = path[v.yieldCellIdx]
       const wp   = this.gridMap.cellToWorld(node.x, node.z)
       v.marker.position.x = wp.x
-      v.marker.position.y = 0.06
+      v.marker.position.y = 0.09
       v.marker.position.z = wp.z
       return
     }
@@ -196,7 +196,7 @@ export class VehicleManager {
         v.pathProgress  = idx   // snap to cell entry (intersection center)
         const wp        = this.gridMap.cellToWorld(node.x, node.z)
         v.marker.position.x = wp.x
-        v.marker.position.y = 0.06
+        v.marker.position.y = 0.09
         v.marker.position.z = wp.z
         return
       }
@@ -217,7 +217,7 @@ export class VehicleManager {
     const offsetScale = this.isIntersectionCell(path[idx].x, path[idx].z) ? 0.0 : 1.0
 
     v.marker.position.x = a.x + (b.x - a.x) * t - perpX * LANE_OFFSET * offsetScale
-    v.marker.position.y = 0.06
+    v.marker.position.y = 0.09
     v.marker.position.z = a.z + (b.z - a.z) * t - perpZ * LANE_OFFSET * offsetScale
     v.marker.rotationQuaternion = Quaternion.RotationAxis(Vector3.Up(), Math.atan2(dirZ, dirX))
   }
@@ -251,7 +251,7 @@ export class VehicleManager {
       const last  = path[path.length - 1]
       const wp    = this.gridMap.cellToWorld(last.x, last.z)
       v.marker.position.x = wp.x - perpX * LANE_OFFSET
-      v.marker.position.y = 0.06
+      v.marker.position.y = 0.09
       v.marker.position.z = wp.z - perpZ * LANE_OFFSET
     }
   }
@@ -268,7 +268,7 @@ export class VehicleManager {
     const { px, pz }  = this._perpAtPathNode(path, 0)
     const wp          = this.gridMap.cellToWorld(path[0].x, path[0].z)
     v.marker.position.x = wp.x - px * LANE_OFFSET
-    v.marker.position.y = 0.06
+    v.marker.position.y = 0.09
     v.marker.position.z = wp.z - pz * LANE_OFFSET
   }
 
@@ -307,7 +307,7 @@ export class VehicleManager {
       const { px, pz } = this._perpAtPathNode(path, 0)
       const startWp    = this.gridMap.cellToWorld(path[0].x, path[0].z)
       const marker     = this.template.createInstance(`vehicle_${this.nextInstanceId++}`)
-      marker.position  = new Vector3(startWp.x - px * LANE_OFFSET, 0.06, startWp.z - pz * LANE_OFFSET)
+      marker.position  = new Vector3(startWp.x - px * LANE_OFFSET, 0.09, startWp.z - pz * LANE_OFFSET)
       marker.isPickable = false
 
       // Set initial rotation facing the first travel direction
