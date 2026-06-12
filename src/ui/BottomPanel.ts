@@ -86,6 +86,13 @@ export class BottomPanel {
 
     this.keyHandler = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).tagName === 'INPUT') return
+      if (e.key === 'Escape') {
+        if (this._activeTool !== null) {
+          e.preventDefault()
+          this.setActiveTool(null)
+        }
+        return
+      }
       const toolKey = HOTKEY_MAP[e.key.toLowerCase()]
       if (!toolKey) return
       e.preventDefault()
