@@ -322,3 +322,135 @@ describe('VehicleManager.dispose', () => {
     expect(manager.count).toBe(0)
   })
 })
+
+// ── isIntersectionCell ────────────────────────────────────────────────────────
+
+// T-intersection layout used in intersection tests:
+//   Road row:   (3,5)-(4,5)-(5,5)-(6,5)
+//   North spur:         (4,4)            ← makes (4,5) an intersection
+//   Residential: (3,4)   Commercial: (6,6)
+//   Path: (3,5)→(4,5)→(5,5)→(6,5)  length 4
+function buildIntersectionCity(gridMap: GridMap): void {
+  for (let x = 3; x <= 6; x++) gridMap.set(x, 5, CellType.ROAD)
+  gridMap.set(4, 4, CellType.ROAD)              // north spur — makes (4,5) an intersection
+  gridMap.set(3, 4, CellType.ZONE_RESIDENTIAL)
+  gridMap.set(6, 6, CellType.ZONE_COMMERCIAL)
+}
+
+describe('VehicleManager.isIntersectionCell', () => {
+  it('returns false for a straight EW road cell with no NS neighbours', () => {
+    const { manager, gridMap } = makeManager()
+    for (let x = 3; x <= 7; x++) gridMap.set(x, 5, CellType.ROAD)
+    // (5,5): E=(6,5), W=(4,5) only — no NS neighbours
+    expect((manager as any).isIntersectionCell(5, 5)).toBe(false)
+  })
+
+  it('returns true for a T-intersection cell', () => {
+    const { manager, gridMap } = makeManager()
+    buildIntersectionCity(gridMap)
+    // (4,5): N=(4,4), E=(5,5), W=(3,5) → has both NS and EW → intersection
+    expect((manager as any).isIntersectionCell(4, 5)).toBe(true)
+  })
+
+  it('returns false for the spur endpoint itself', () => {
+    const { manager, gridMap } = makeManager()
+    buildIntersectionCity(gridMap)
+    // (4,4): S=(4,5) only — no EW neighbours
+    expect((manager as any).isIntersectionCell(4, 4)).toBe(false)
+  })
+})
+
+// ── Intersection yield ────────────────────────────────────────────────────────
+
+describe('VehicleManager intersection yield', () => {
+  it('vehicle enters braking state when it arrives at an intersection cell', () => {
+    const { manager, gridMap } = makeManager()
+    buildIntersectionCity(gridMap)
+    manager.update(0)
+
+    // Path: (3,5)→(4,5)→(5,5)→(6,5); speed=8 → 1 cell = 0.125 s
+    // After 0.15 s: pathProgress ≈ 1.2, idx=1, path[1]=(4,5)=intersection → braking
+    manager.update(0.15)
+    const v = (manager as any).vehicles[0]
+    expect(v.yieldState).toBe('braking')
+    expect(v.yieldCellIdx).toBe(1)
+  })
+
+  it('vehicle transitions braking → waiting → none at intersection', () => {
+    const { manager, gridMap } = makeManager()
+    buildIntersectionCity(gridMap)
+    manager.update(0)
+    manager.update(0.15)   // → braking
+
+    const v = (manager as any).vehicles[0]
+    expect(v.yieldState).toBe('braking')
+
+    manager.update(0.25)   // braking timer (0.2 s) expires → waiting
+    expect(v.yieldState).toBe('waiting')
+
+    manager.update(0.35)   // waiting timer (0.3 s) expires → resuming/none
+    // resuming is cleared on the next advance call; here yieldState is 'resuming' or 'none'
+    expect(['resuming', 'none']).toContain(v.yieldState)
+  })
+
+  it('vehicle holds position at intersection center during yield', () => {
+    const { manager, gridMap } = makeManager()
+    buildIntersectionCity(gridMap)
+    manager.update(0)
+    manager.update(0.15)   // → braking at (4,5)
+
+    const v = (manager as any).vehicles[0]
+    const { x: cx, z: cz } = gridMap.cellToWorld(4, 5)
+    expect(v.marker.position.x).toBeCloseTo(cx, 4)
+    expect(v.marker.position.z).toBeCloseTo(cz, 4)
+  })
+
+  it('vehicle yield resets on new commute so it yields again', () => {
+    const { manager, gridMap } = makeManager()
+    buildIntersectionCity(gridMap)
+    manager.update(0)
+    manager.update(0.15)   // → braking
+    manager.update(0.25)   // → waiting
+    manager.update(0.35)   // → resuming/none
+
+    const v = (manager as any).vehicles[0]
+    // Advance to AtWork then back to CommutingHome
+    manager.update(5.0)    // finish commute, dwell at work
+    manager.update(9.0)    // dwell expires → CommutingHome
+
+    // yieldCellIdx reset to -1, vehicle will yield again on return path
+    expect(v.yieldCellIdx).toBe(-1)
+  })
+
+  it('vehicle still reaches destination after yielding at intersection', () => {
+    const { manager, gridMap } = makeManager()
+    buildIntersectionCity(gridMap)
+    manager.update(0)
+
+    // Without yield: path length=4, travel = 3/8 = 0.375 s
+    // With yield at idx=1 (0.2+0.3=0.5 s pause): total ≈ 1 s
+    manager.update(2.0)   // well past worst-case arrival
+    const v = (manager as any).vehicles[0]
+    expect(v.state).toBe(S_AT_WORK)
+  })
+
+  it('vehicle offset is 0 while traversing an intersection segment', () => {
+    const { manager, gridMap } = makeManager()
+    buildIntersectionCity(gridMap)
+    manager.update(0)
+
+    // Skip past the yield by advancing far enough for the yield to expire
+    // then check position when idx=1 (intersection) during normal traversal
+    manager.update(0.15)   // enters braking at (4,5)
+    manager.update(0.25)   // waiting
+    manager.update(0.35)   // resuming
+    manager.update(0.01)   // now advancing through intersection, no offset
+
+    const v = (manager as any).vehicles[0]
+    // Vehicle is between path[1]=(4,5) and path[2]=(5,5), idx=1=intersection
+    // offset should be 0 → z matches road center z
+    const roadCenterZ = gridMap.cellToWorld(4, 5).z
+    // Either still at intersection center or very close — delta < 0.18
+    expect(Math.abs(v.marker.position.z - roadCenterZ)).toBeLessThan(0.18)
+  })
+})

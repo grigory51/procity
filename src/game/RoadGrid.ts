@@ -87,6 +87,9 @@ export class RoadGrid {
   private placementPhase: PlacementPhase = 'idle'
   private startCell: { x: number; z: number } | null = null
 
+  // One-way road data: maps "cx,cz" → travel direction
+  private oneWayRoads: Map<string, 'NS' | 'EW'> = new Map()
+
   // Ghost preview meshes
   private ghostSourceMesh: Mesh | null = null
   private ghostInstances: InstancedMesh[] = []
@@ -130,6 +133,20 @@ export class RoadGrid {
 
   onRoadUpgraded(cb: () => void): void {
     this._onRoadUpgradedCb = cb
+  }
+
+  // ─── One-way road API ────────────────────────────────────────────────────────
+
+  setOneWay(cx: number, cz: number, direction: 'NS' | 'EW'): void {
+    this.oneWayRoads.set(`${cx},${cz}`, direction)
+  }
+
+  clearOneWay(cx: number, cz: number): void {
+    this.oneWayRoads.delete(`${cx},${cz}`)
+  }
+
+  getOneWayDirection(cx: number, cz: number): 'NS' | 'EW' | null {
+    return this.oneWayRoads.get(`${cx},${cz}`) ?? null
   }
 
   activate(): void {

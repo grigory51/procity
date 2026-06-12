@@ -44,6 +44,9 @@ interface Vehicle {
   pathProgress: number
   dwellTimer:   number
   marker:       InstancedMesh
+  yieldState:   'none' | 'braking' | 'waiting' | 'resuming'
+  yieldTimer:   number
+  yieldCellIdx: number
 }
 
 // ── VehicleManager ────────────────────────────────────────────────────────────
@@ -149,6 +152,28 @@ export class VehicleManager {
       return
     }
 
+    // ── Intersection yield state machine ──────────────────────────────────────
+    if (v.yieldState === 'braking' || v.yieldState === 'waiting') {
+      v.yieldTimer -= dt
+      if (v.yieldState === 'braking' && v.yieldTimer <= 0) {
+        v.yieldState = 'waiting'
+        v.yieldTimer = 0.3
+      } else if (v.yieldState === 'waiting' && v.yieldTimer <= 0) {
+        v.yieldState = 'resuming'
+        v.yieldTimer = 0
+      }
+      // Hold position at intersection center, no lane offset
+      const node = path[v.yieldCellIdx]
+      const wp   = this.gridMap.cellToWorld(node.x, node.z)
+      v.marker.position.x = wp.x
+      v.marker.position.y = 0.06
+      v.marker.position.z = wp.z
+      return
+    }
+
+    if (v.yieldState === 'resuming') v.yieldState = 'none'
+
+    // ── Normal path advance ───────────────────────────────────────────────────
     v.pathProgress += VEHICLE_SPEED * dt
     const maxProgress = path.length - 1
 
@@ -160,6 +185,23 @@ export class VehicleManager {
 
     const idx  = Math.floor(v.pathProgress)
     const t    = v.pathProgress - idx
+
+    // Yield trigger: first time entering this intersection cell on this commute
+    if (v.yieldState === 'none' && idx !== v.yieldCellIdx && idx < path.length - 1) {
+      const node = path[idx]
+      if (this.isIntersectionCell(node.x, node.z)) {
+        v.yieldCellIdx  = idx
+        v.yieldState    = 'braking'
+        v.yieldTimer    = 0.2
+        v.pathProgress  = idx   // snap to cell entry (intersection center)
+        const wp        = this.gridMap.cellToWorld(node.x, node.z)
+        v.marker.position.x = wp.x
+        v.marker.position.y = 0.06
+        v.marker.position.z = wp.z
+        return
+      }
+    }
+
     const a    = this.gridMap.cellToWorld(path[idx].x,     path[idx].z)
     const b    = this.gridMap.cellToWorld(path[idx + 1].x, path[idx + 1].z)
     const dx   = b.x - a.x
@@ -170,10 +212,23 @@ export class VehicleManager {
     // perp = Vector3(-dir.z, 0, dir.x); vehiclePos = roadCenter - perp * LANE_OFFSET
     const perpX = -dirZ
     const perpZ =  dirX
-    v.marker.position.x = a.x + (b.x - a.x) * t - perpX * LANE_OFFSET
+
+    // Blend lane offset to 0 at intersections so the vehicle tracks through center
+    const offsetScale = this.isIntersectionCell(path[idx].x, path[idx].z) ? 0.0 : 1.0
+
+    v.marker.position.x = a.x + (b.x - a.x) * t - perpX * LANE_OFFSET * offsetScale
     v.marker.position.y = 0.06
-    v.marker.position.z = a.z + (b.z - a.z) * t - perpZ * LANE_OFFSET
+    v.marker.position.z = a.z + (b.z - a.z) * t - perpZ * LANE_OFFSET * offsetScale
     v.marker.rotationQuaternion = Quaternion.RotationAxis(Vector3.Up(), Math.atan2(dirZ, dirX))
+  }
+
+  /** Returns true when (cx,cz) has road neighbors on both axes (NS and EW). */
+  private isIntersectionCell(cx: number, cz: number): boolean {
+    const hasN = isRoadCell(this.gridMap.get(cx,     cz - 1))
+    const hasS = isRoadCell(this.gridMap.get(cx,     cz + 1))
+    const hasE = isRoadCell(this.gridMap.get(cx + 1, cz))
+    const hasW = isRoadCell(this.gridMap.get(cx - 1, cz))
+    return (hasN || hasS) && (hasE || hasW)
   }
 
   private arriveAt(
@@ -205,6 +260,9 @@ export class VehicleManager {
     const leavingWork = v.state === State.AtWork
     v.state           = leavingWork ? State.CommutingHome : State.CommutingToWork
     v.pathProgress    = 0
+    v.yieldState      = 'none'
+    v.yieldTimer      = 0
+    v.yieldCellIdx    = -1
     v.marker.material = this.matCommuting
     const path        = leavingWork ? v.returnPath : v.forwardPath
     const { px, pz }  = this._perpAtPathNode(path, 0)
@@ -270,6 +328,9 @@ export class VehicleManager {
         state:        State.CommutingToWork,
         pathProgress: 0,
         dwellTimer:   0,
+        yieldState:   'none',
+        yieldTimer:   0,
+        yieldCellIdx: -1,
         marker,
       })
     }

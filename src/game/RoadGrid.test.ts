@@ -174,3 +174,57 @@ describe('RoadGrid', () => {
     })
   })
 })
+
+// ── One-way road API ──────────────────────────────────────────────────────────
+
+describe('RoadGrid one-way API', () => {
+  it('setOneWay stores direction NS for a cell', () => {
+    const { rg } = createRoadGrid()
+    rg.setOneWay(10, 10, 'NS')
+    expect(rg.getOneWayDirection(10, 10)).toBe('NS')
+  })
+
+  it('setOneWay stores direction EW for a cell', () => {
+    const { rg } = createRoadGrid()
+    rg.setOneWay(5, 7, 'EW')
+    expect(rg.getOneWayDirection(5, 7)).toBe('EW')
+  })
+
+  it('clearOneWay removes an existing one-way constraint', () => {
+    const { rg } = createRoadGrid()
+    rg.setOneWay(10, 10, 'EW')
+    rg.clearOneWay(10, 10)
+    expect(rg.getOneWayDirection(10, 10)).toBeNull()
+  })
+
+  it('getOneWayDirection returns null for a cell with no constraint', () => {
+    const { rg } = createRoadGrid()
+    expect(rg.getOneWayDirection(5, 5)).toBeNull()
+  })
+
+  it('setOneWay can overwrite a previous direction', () => {
+    const { rg } = createRoadGrid()
+    rg.setOneWay(10, 10, 'NS')
+    rg.setOneWay(10, 10, 'EW')
+    expect(rg.getOneWayDirection(10, 10)).toBe('EW')
+  })
+
+  it('clearOneWay on an unconstrained cell is a no-op', () => {
+    const { rg } = createRoadGrid()
+    expect(() => rg.clearOneWay(99, 99)).not.toThrow()
+    expect(rg.getOneWayDirection(99, 99)).toBeNull()
+  })
+
+  it('multiple cells can have independent one-way constraints', () => {
+    const { rg } = createRoadGrid()
+    rg.setOneWay(1, 1, 'NS')
+    rg.setOneWay(2, 2, 'EW')
+    rg.setOneWay(3, 3, 'NS')
+    expect(rg.getOneWayDirection(1, 1)).toBe('NS')
+    expect(rg.getOneWayDirection(2, 2)).toBe('EW')
+    expect(rg.getOneWayDirection(3, 3)).toBe('NS')
+    rg.clearOneWay(2, 2)
+    expect(rg.getOneWayDirection(2, 2)).toBeNull()
+    expect(rg.getOneWayDirection(1, 1)).toBe('NS')
+  })
+})
