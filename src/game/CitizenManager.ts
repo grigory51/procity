@@ -7,7 +7,7 @@ import {
   Vector3,
   type InstancedMesh,
 } from '@babylonjs/core'
-import { CellType, GridMap } from '../simulation'
+import { CellType, GridMap, isRoadCell } from '../simulation'
 import { RoadGraph } from '../simulation'
 import type { PathNode } from '../simulation'
 
@@ -288,7 +288,7 @@ export class CitizenManager {
         const id = nz * this.gridMap.width + nx
         if (visited.has(id)) continue
         visited.add(id)
-        if (this.gridMap.get(nx, nz) === CellType.ROAD) return { x: nx, z: nz }
+        if (isRoadCell(this.gridMap.get(nx, nz))) return { x: nx, z: nz }
         queue.push({ x: nx, z: nz, dist: dist + 1 })
       }
     }

@@ -96,6 +96,20 @@ describe('CitizenManager.findNearestRoad', () => {
     const result = (manager as any).findNearestRoad(50, 50)
     expect(result).toBeNull()
   })
+
+  it('finds an adjacent collector road cell', () => {
+    const { manager, gridMap } = makeManager()
+    gridMap.set(10, 10, CellType.ROAD_COLLECTOR)
+    const result = (manager as any).findNearestRoad(10, 9)
+    expect(result).toEqual({ x: 10, z: 10 })
+  })
+
+  it('finds an adjacent arterial road cell', () => {
+    const { manager, gridMap } = makeManager()
+    gridMap.set(10, 10, CellType.ROAD_ARTERIAL)
+    const result = (manager as any).findNearestRoad(10, 9)
+    expect(result).toEqual({ x: 10, z: 10 })
+  })
 })
 
 // ── Citizen spawning ─────────────────────────────────────────────────────────

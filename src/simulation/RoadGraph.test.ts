@@ -109,6 +109,62 @@ describe('RoadGraph.findPath', () => {
   })
 })
 
+describe('RoadGraph road tiers', () => {
+  it('traverses collector roads', () => {
+    const gridMap = new GridMap()
+    const graph = new RoadGraph(gridMap)
+    gridMap.set(0, 0, CellType.ROAD_COLLECTOR)
+    gridMap.set(1, 0, CellType.ROAD_COLLECTOR)
+    gridMap.set(2, 0, CellType.ROAD_COLLECTOR)
+    const path = graph.findPath(0, 0, 2, 0)
+    expect(path).not.toBeNull()
+    expect(path!.length).toBe(3)
+  })
+
+  it('traverses arterial roads', () => {
+    const gridMap = new GridMap()
+    const graph = new RoadGraph(gridMap)
+    gridMap.set(0, 0, CellType.ROAD_ARTERIAL)
+    gridMap.set(1, 0, CellType.ROAD_ARTERIAL)
+    gridMap.set(2, 0, CellType.ROAD_ARTERIAL)
+    const path = graph.findPath(0, 0, 2, 0)
+    expect(path).not.toBeNull()
+    expect(path!.length).toBe(3)
+  })
+
+  it('paths across mixed tiers', () => {
+    const gridMap = new GridMap()
+    const graph = new RoadGraph(gridMap)
+    gridMap.set(0, 0, CellType.ROAD)
+    gridMap.set(1, 0, CellType.ROAD_COLLECTOR)
+    gridMap.set(2, 0, CellType.ROAD_ARTERIAL)
+    const path = graph.findPath(0, 0, 2, 0)
+    expect(path).not.toBeNull()
+    expect(path!.length).toBe(3)
+  })
+
+  it('prefers arterial detour over longer local path', () => {
+    // Layout (z=0 is top):
+    //   Local road:    (0,0)→(1,0)→(2,0)→(3,0)→(4,0)→(5,0)  cost = 5.0
+    //   Arterial loop: (0,0)→(0,1)→(1,1)→(2,1)→(3,1)→(4,1)→(5,1)→(5,0)  cost = 7×0.4=2.8
+    // A* with tier costs must prefer the arterial route despite more hops.
+    const gridMap = new GridMap()
+    const graph = new RoadGraph(gridMap)
+    // local corridor
+    for (let x = 0; x <= 5; x++) gridMap.set(x, 0, CellType.ROAD)
+    // arterial corridor + connections at each end
+    gridMap.set(0, 1, CellType.ROAD_ARTERIAL)
+    for (let x = 0; x <= 5; x++) gridMap.set(x, 1, CellType.ROAD_ARTERIAL)
+    gridMap.set(5, 1, CellType.ROAD_ARTERIAL)
+
+    const path = graph.findPath(0, 0, 5, 0)
+    expect(path).not.toBeNull()
+    // Optimal path goes via arterial z=1 row
+    const usesArterial = path!.some(n => n.z === 1)
+    expect(usesArterial).toBe(true)
+  })
+})
+
 describe('RoadGraph.addRoad / removeRoad', () => {
   it('addRoad enables previously unreachable path', () => {
     const { graph } = makeGraph([[0, 0], [2, 0]])

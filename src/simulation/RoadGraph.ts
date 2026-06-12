@@ -1,4 +1,11 @@
-import { CellType, GridMap } from './GridMap'
+import { CellType, GridMap, isRoadCell } from './GridMap'
+
+// Lower cost = faster road tier; A* prefers arterial > collector > local.
+function roadCost(type: CellType): number {
+  if (type === CellType.ROAD_ARTERIAL)  return 0.4
+  if (type === CellType.ROAD_COLLECTOR) return 0.6
+  return 1.0
+}
 
 export interface PathNode {
   x: number
@@ -81,8 +88,8 @@ export class RoadGraph {
    * or null if no path exists or start/end are not road cells.
    */
   findPath(startX: number, startZ: number, endX: number, endZ: number): PathNode[] | null {
-    if (this.gridMap.get(startX, startZ) !== CellType.ROAD) return null
-    if (this.gridMap.get(endX, endZ) !== CellType.ROAD) return null
+    if (!isRoadCell(this.gridMap.get(startX, startZ))) return null
+    if (!isRoadCell(this.gridMap.get(endX, endZ))) return null
 
     const width = this.gridMap.width
     const startId = this._encode(startX, startZ, width)
@@ -112,12 +119,13 @@ export class RoadGraph {
       for (const [dx, dz] of DIRS) {
         const nx = cx + dx
         const nz = cz + dz
-        if (this.gridMap.get(nx, nz) !== CellType.ROAD) continue
+        const neighborType = this.gridMap.get(nx, nz)
+        if (!isRoadCell(neighborType)) continue
 
         const neighborId = this._encode(nx, nz, width)
         if (closed.has(neighborId)) continue
 
-        const tentativeG = g + 1
+        const tentativeG = g + roadCost(neighborType)
         const knownG = gScore.get(neighborId)
         if (knownG !== undefined && tentativeG >= knownG) continue
 
@@ -135,7 +143,8 @@ export class RoadGraph {
   }
 
   private _h(ax: number, az: number, bx: number, bz: number): number {
-    return Math.abs(ax - bx) + Math.abs(az - bz)
+    // Scale by minimum road cost so the heuristic stays admissible with fractional edge weights.
+    return 0.4 * (Math.abs(ax - bx) + Math.abs(az - bz))
   }
 
   private _reconstructPath(cameFrom: Map<number, number>, endId: number, width: number): PathNode[] {
