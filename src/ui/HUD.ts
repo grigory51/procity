@@ -79,7 +79,7 @@ export class HUD {
     ].join('<br>')
   }
 
-  showNotification(message: string, durationMs = 5_000): void {
+  showNotification(message: string, durationMs = 3_000): void {
     if (this.notificationTimer !== null) {
       clearTimeout(this.notificationTimer)
       this.notificationEl?.remove()
@@ -87,22 +87,26 @@ export class HUD {
 
     const note = document.createElement('div')
     note.style.cssText = [
-      'position:fixed', 'top:50%', 'left:50%',
-      'transform:translate(-50%,-50%)',
-      'background:rgba(180,20,20,0.92)',
-      'color:#fff', 'font-family:monospace', 'font-size:18px', 'font-weight:bold',
-      'padding:20px 36px', 'border-radius:8px',
-      'border:2px solid #e53935',
+      'position:fixed', 'bottom:60px', 'left:50%',
+      'transform:translateX(-50%)',
+      'background:rgba(160,25,25,0.90)',
+      'color:#fff', 'font-family:monospace', 'font-size:12px', 'font-weight:bold',
+      'padding:6px 16px', 'border-radius:4px',
+      'border:1px solid rgba(229,57,53,0.5)',
       'pointer-events:none', 'z-index:200',
-      'text-align:center',
+      'white-space:nowrap',
+      'opacity:1', 'transition:opacity 0.3s',
     ].join(';')
     note.textContent = message
     document.body.appendChild(note)
     this.notificationEl = note
 
     this.notificationTimer = setTimeout(() => {
-      note.remove()
-      this.notificationEl = null
+      note.style.opacity = '0'
+      setTimeout(() => {
+        note.remove()
+        if (this.notificationEl === note) this.notificationEl = null
+      }, 300)
       this.notificationTimer = null
     }, durationMs)
   }
