@@ -1,5 +1,5 @@
 import { GameEngine } from './engine'
-import { DemoScene, RoadGrid, ZoneManager, CitizenManager } from './game'
+import { DemoScene, RoadGrid, ZoneManager, CitizenManager, VehicleManager } from './game'
 import type { RoadTier } from './game/RoadGrid'
 import { GridMap, CellType, RoadGraph, EconomyManager, SimulationEngine, SaveSystem, isRoadCell } from './simulation'
 import { HUD, MiniMap, StatsPanel, BottomPanel, TutorialPanel, BuildingTooltip } from './ui'
@@ -15,6 +15,7 @@ async function main(): Promise<void> {
   const roadGrid      = new RoadGrid(engine.scene, scene.camera, gridMap, scene.ground)
   const zoneManager   = new ZoneManager(engine.scene, scene.camera, gridMap, scene.ground)
   const citizens      = new CitizenManager(engine.scene, gridMap, roadGraph)
+  const vehicles      = new VehicleManager(engine.scene, gridMap, roadGraph)
   const economy       = new EconomyManager(gridMap)
   const sim           = new SimulationEngine()
 
@@ -149,6 +150,7 @@ async function main(): Promise<void> {
   sim.onTick((scaledDelta) => {
     economy.tick(scaledDelta)
     citizens.update(scaledDelta)
+    vehicles.update(scaledDelta)
   })
 
   sim.onStateChange((state) => hud.updateSimState(state))
