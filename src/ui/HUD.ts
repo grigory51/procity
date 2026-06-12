@@ -24,6 +24,7 @@ export class HUD {
   private activityCommutingEl: HTMLSpanElement | null = null
   private activityAtHomeEl: HTMLSpanElement | null = null
   private activityAtWorkEl: HTMLSpanElement | null = null
+  private activityShoppingEl: HTMLSpanElement | null = null
   private activityLogEl: HTMLDivElement | null = null
   private activityLogEntries: string[] = []
   private saveIndicatorEl: HTMLDivElement | null = null
@@ -264,7 +265,8 @@ export class HUD {
 
     body.appendChild(mkRow('👤', 'hud-act-commuting'))
     body.appendChild(mkRow('🏠', 'hud-act-home'))
-    body.appendChild(mkRow('🏪', 'hud-act-work'))
+    body.appendChild(mkRow('🏢', 'hud-act-work'))
+    body.appendChild(mkRow('🛍', 'hud-act-shopping'))
 
     const sep = document.createElement('div')
     sep.style.cssText = 'border-top:1px solid rgba(255,255,255,0.1);margin:5px 0 3px'
@@ -284,15 +286,16 @@ export class HUD {
     ].join(';')
     body.appendChild(logEl)
     this.activityLogEl = logEl
-    this.activityLogEntries = ['🛤 Residents commute to shops along roads — each trip earns taxes']
+    this.activityLogEntries = ['🛤 Residents commute to work, then shop — spending boosts commercial income']
     logEl.textContent = this.activityLogEntries[0]
 
     panel.append(header, body)
     document.body.appendChild(panel)
-    this.activityPanel = panel
+    this.activityPanel       = panel
     this.activityCommutingEl = document.getElementById('hud-act-commuting') as HTMLSpanElement
     this.activityAtHomeEl    = document.getElementById('hud-act-home')      as HTMLSpanElement
     this.activityAtWorkEl    = document.getElementById('hud-act-work')      as HTMLSpanElement
+    this.activityShoppingEl  = document.getElementById('hud-act-shopping')  as HTMLSpanElement
   }
 
   /** Prepends a plain-language event to the activity log (max 10 entries). */
@@ -334,11 +337,12 @@ export class HUD {
     }, 1_200)
   }
 
-  updateCitizenActivity(commuting: number, atHome: number, atWork: number): void {
+  updateCitizenActivity(commuting: number, atHome: number, atWork: number, shopping: number): void {
     if (!this.activityCommutingEl) return
-    this.activityCommutingEl.textContent = `${commuting} citizens commuting`
-    this.activityAtHomeEl!.textContent   = `${atHome} residents home`
-    this.activityAtWorkEl!.textContent   = `${atWork} shopping`
+    this.activityCommutingEl.textContent = `${commuting} commuting`
+    this.activityAtHomeEl!.textContent   = `${atHome} at home`
+    this.activityAtWorkEl!.textContent   = `${atWork} at work`
+    this.activityShoppingEl!.textContent = `${shopping} shopping`
   }
 
   dispose(): void {

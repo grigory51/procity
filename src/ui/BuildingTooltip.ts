@@ -90,12 +90,23 @@ export class BuildingTooltip {
       `Cell (${cx}, ${cz})`,
     ]
 
-    if (cellType === CellType.ZONE_RESIDENTIAL || cellType === CellType.ZONE_COMMERCIAL) {
-      const { residents, workers } = this.citizens.citizensAtCell(cx, cz)
+    if (
+      cellType === CellType.ZONE_RESIDENTIAL ||
+      cellType === CellType.ZONE_COMMERCIAL  ||
+      cellType === CellType.ZONE_INDUSTRIAL
+    ) {
+      const { residents, workers, shoppers } = this.citizens.citizensAtCell(cx, cz)
       if (cellType === CellType.ZONE_RESIDENTIAL && residents > 0) {
         lines.push(`<span style="color:#7ec8ff">🏠 ${residents} resident${residents !== 1 ? 's' : ''}</span>`)
-      } else if (cellType === CellType.ZONE_COMMERCIAL && workers > 0) {
-        lines.push(`<span style="color:#7effc8">🏪 ${workers} worker${workers !== 1 ? 's' : ''}</span>`)
+      } else if (cellType === CellType.ZONE_COMMERCIAL) {
+        if (workers > 0) {
+          lines.push(`<span style="color:#7effc8">💼 ${workers} worker${workers !== 1 ? 's' : ''}</span>`)
+        }
+        if (shoppers > 0) {
+          lines.push(`<span style="color:#ffd54f">🛍 ${shoppers} regular shopper${shoppers !== 1 ? 's' : ''}</span>`)
+        }
+      } else if (cellType === CellType.ZONE_INDUSTRIAL && workers > 0) {
+        lines.push(`<span style="color:#ffcc80">🏭 ${workers} worker${workers !== 1 ? 's' : ''}</span>`)
       }
 
       const incomePerCell = this.computeIncomePerCell(cellType)

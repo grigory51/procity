@@ -106,6 +106,11 @@ async function main(): Promise<void> {
     hud.showNotification('🏙 Intersections create the blocks your city grows into', 5_000)
   })
 
+  // ── Citizen lifecycle events ────────────────────────────────────────────────
+
+  // Feed citizen shopping spending into the economy: boosts commercial income each tax cycle
+  citizens.onShop(amount => economy.addShopRevenue(amount))
+
   // ── Economy events ──────────────────────────────────────────────────────
 
   economy.onBankruptcy(() => {
@@ -123,14 +128,16 @@ async function main(): Promise<void> {
     saveSystem.scheduleSave()  // persist balance after each tax cycle
     statsPanel.pushCycleNet(receipt.netChange)
 
-    const resCells = gridMap.countCellType(CellType.ZONE_RESIDENTIAL)
-    const comCells = gridMap.countCellType(CellType.ZONE_COMMERCIAL)
-    const resInc   = Math.round(economy.lastResidentialIncome)
-    const comInc   = Math.round(economy.lastCommercialIncome)
-    const roadCost = Math.round(receipt.expenses)
+    const resCells  = gridMap.countCellType(CellType.ZONE_RESIDENTIAL)
+    const comCells  = gridMap.countCellType(CellType.ZONE_COMMERCIAL)
+    const resInc    = Math.round(economy.lastResidentialIncome)
+    const comInc    = Math.round(economy.lastCommercialIncome)
+    const shopRev   = Math.round(economy.lastCitizenShopRevenue)
+    const roadCost  = Math.round(receipt.expenses)
     if (resCells + comCells > 0) {
+      const shopStr = shopRev > 0 ? ` (🛍 +$${shopRev.toLocaleString()} shopping)` : ''
       hud.logActivity(
-        `💰 +$${resInc.toLocaleString()} res (${resCells}) · +$${comInc.toLocaleString()} com (${comCells}) · −$${roadCost.toLocaleString()} roads`
+        `💰 +$${resInc.toLocaleString()} res · +$${comInc.toLocaleString()} com${shopStr} · −$${roadCost.toLocaleString()} roads`
       )
     } else {
       hud.logActivity('💰 Tax cycle: no zones yet — build residential zones to earn income')
@@ -241,10 +248,10 @@ async function main(): Promise<void> {
       economy.secondsUntilCycle,
     )
     miniMap.update(citizens.count)
-    hud.updateCitizenActivity(citizens.commutingCount, citizens.atHomeCount, citizens.atWorkCount)
+    hud.updateCitizenActivity(citizens.commutingCount, citizens.atHomeCount, citizens.atWorkCount, citizens.shoppingCount)
     if (!firstCommuteLogged && citizens.commutingCount > 0) {
       firstCommuteLogged = true
-      hud.logActivity('👨‍💼 First residents are commuting — tax income grows as more zones are built!')
+      hud.logActivity('👨‍💼 Residents are commuting — build commercial zones so they can shop and boost income!')
     }
     statsPanel.push(
       citizens.count,

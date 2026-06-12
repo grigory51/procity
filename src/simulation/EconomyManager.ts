@@ -37,6 +37,8 @@ export class EconomyManager {
   private _lastExpenses = 0
   private _lastResidentialIncome = 0
   private _lastCommercialIncome = 0
+  private _lastCitizenShopRevenue = 0
+  private _citizenShopRevenue = 0  // accumulates between tax cycles
   private _state: FiscalState = 'surplus'
   private _elapsed = 0
   private _taxRates: TaxRates
@@ -58,6 +60,8 @@ export class EconomyManager {
   get lastExpenses(): number { return this._lastExpenses }
   get lastResidentialIncome(): number { return this._lastResidentialIncome }
   get lastCommercialIncome(): number { return this._lastCommercialIncome }
+  /** Citizen shopping revenue included in the most recent tax cycle. */
+  get lastCitizenShopRevenue(): number { return this._lastCitizenShopRevenue }
   get fiscalState(): FiscalState { return this._state }
   get taxRates(): Readonly<TaxRates> { return this._taxRates }
   /** Seconds remaining until next tax cycle fires */
@@ -68,6 +72,11 @@ export class EconomyManager {
 
   /** Restores balance from a saved state. */
   restoreBalance(balance: number): void { this._balance = balance }
+
+  /** Called by CitizenManager each time a citizen completes a shopping trip. Accumulates until next tax cycle. */
+  addShopRevenue(amount: number): void {
+    this._citizenShopRevenue += amount
+  }
 
   /** Advance the simulation. deltaSeconds = real elapsed seconds × timeScale. */
   tick(deltaSeconds: number): void {
@@ -81,13 +90,19 @@ export class EconomyManager {
   private _runCycle(): void {
     const counts = this._countCells()
     const arterialBonus = this._computeArterialBonus()
-    const income = this._computeIncome(counts) + arterialBonus
+
+    // Collect and reset citizen shopping revenue accumulated since last cycle
+    const shopRevenue = this._citizenShopRevenue
+    this._citizenShopRevenue = 0
+    this._lastCitizenShopRevenue = shopRevenue
+
+    const income = this._computeIncome(counts) + arterialBonus + shopRevenue
     const expenses = counts.roads * this._taxRates.roadMaintenance
     const net = income - expenses
 
     const r = this._taxRates
     this._lastResidentialIncome = counts.residential * r.residential * this._densityMultiplier(counts.residential)
-    this._lastCommercialIncome  = counts.commercial  * r.commercial  * this._densityMultiplier(counts.commercial) + arterialBonus
+    this._lastCommercialIncome  = counts.commercial  * r.commercial  * this._densityMultiplier(counts.commercial) + arterialBonus + shopRevenue
 
     this._balance += net
     this._lastIncome = income
