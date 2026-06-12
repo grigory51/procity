@@ -15,6 +15,7 @@ import { CellType, GridMap, isRoadCell } from '../simulation'
 
 export type RoadTier = 'local' | 'collector' | 'arterial'
 export type RoadMode = 'place' | 'upgrade'
+export type RoadOrientation = 'NS_STRAIGHT' | 'EW_STRAIGHT' | 'INTERSECTION'
 
 type PlacementPhase = 'idle' | 'placing'
 
@@ -24,26 +25,56 @@ const TIER_CELL_TYPE: Record<RoadTier, CellType> = {
   arterial:  CellType.ROAD_ARTERIAL,
 }
 
-// Visual dimensions per tier [width, height, depth]
-const TIER_DIMS: Record<RoadTier, [number, number, number]> = {
-  local:     [0.92, 0.06, 0.92],
-  collector: [0.94, 0.07, 0.94],
-  arterial:  [0.96, 0.08, 0.96],
+// Road surface widths per tier (the asphalt strip, flanked by sidewalks)
+const ROAD_SURFACE_WIDTH: Record<RoadTier, number> = {
+  local:     0.68,
+  collector: 0.74,
+  arterial:  0.80,
 }
 
-const TIER_COLOR: Record<RoadTier, Color3> = {
-  local:     new Color3(0.22, 0.22, 0.22),
-  collector: new Color3(0.28, 0.28, 0.28),
-  arterial:  new Color3(0.35, 0.33, 0.30),
-}
+const SIDEWALK_WIDTH = 0.12
+const SIDEWALK_OFFSET = 0.40   // sidewalk center offset from road center
+const CELL_LENGTH = 0.92       // mesh dimension along the road direction
+
+// Y positions
+const ROAD_Y = 0.03
+const MARK_Y = 0.055   // floats just above road surface to avoid z-fighting
+
+// Layer heights
+const ROAD_H = 0.04
+const MARK_H = 0.01
+
+// Lane marking geometry
+const MARK_W = 0.04
+const MARK_EDGE_LENGTH = 0.88  // slightly shorter than cell to avoid edge bleed
+const DASH_LENGTH = 0.12
+
+// Three evenly-spaced dashes per cell along CELL_LENGTH=0.92:
+// gap=(0.92-3*0.12)/4=0.14  first-center=-0.46+0.14+0.06=-0.26
+const DASH_OFFSETS = [-0.26, 0, 0.26] as const
+
+// Sidewalk concrete color: #c8bfb0
+const SIDEWALK_COLOR = new Color3(0.784, 0.749, 0.690)
+
+// Arterial extra lane marking offset from road center
+const ARTERIAL_LANE_OFFSET = 0.18
 
 export class RoadGrid {
   private scene: Scene
   private camera: ArcRotateCamera
   private gridMap: GridMap
   private ground: Mesh
-  private sourceMeshes: Map<RoadTier, Mesh> = new Map()
-  private roadInstances: Map<string, InstancedMesh> = new Map()
+
+  // Source meshes — created once, instanced per cell
+  private roadSurfaceSources: Map<RoadTier, Mesh> = new Map()
+  private intersectionFillSources: Map<RoadTier, Mesh> = new Map()
+  private sidewalkSource!: Mesh
+  private laneMarkEdgeSource!: Mesh
+  private laneMarkDashSource!: Mesh
+
+  // All InstancedMeshes for each road cell (keyed by "cx,cz")
+  private roadCells: Map<string, InstancedMesh[]> = new Map()
+
   private currentTier: RoadTier = 'local'
   private currentMode: RoadMode = 'place'
   private active = false
@@ -70,14 +101,12 @@ export class RoadGrid {
     this.camera = camera
     this.gridMap = gridMap
     this.ground = ground
-    for (const tier of ['local', 'collector', 'arterial'] as RoadTier[]) {
-      this.sourceMeshes.set(tier, this.createSourceMesh(tier))
-    }
+    this.createSourceMeshes()
     this.initPreviewMeshes()
   }
 
   get roadCount(): number {
-    return this.roadInstances.size
+    return this.roadCells.size
   }
 
   setTier(tier: RoadTier): void {
@@ -123,17 +152,219 @@ export class RoadGrid {
     }
   }
 
-  /** Remove the road at a cell and clear the grid cell. Used by the demolish tool. */
+  /** Remove the road at a cell, clear the grid, and refresh neighbor visuals. */
   removeAt(cx: number, cz: number): void {
-    const key = `${cx},${cz}`
-    const inst = this.roadInstances.get(key)
-    if (inst) {
-      inst.dispose()
-      this.roadInstances.delete(key)
-    }
     this.gridMap.set(cx, cz, CellType.EMPTY)
+    this.rebuildCellAndNeighbors(cx, cz)
     this._onRoadPlacedCb?.()
   }
+
+  /** Recreates the road mesh for a saved cell without modifying GridMap. */
+  restoreAt(cx: number, cz: number): void {
+    this.rebuildCellAndNeighbors(cx, cz)
+  }
+
+  // ─── Source mesh creation ────────────────────────────────────────────────────
+
+  private createSourceMeshes(): void {
+    const asphaltMat = new StandardMaterial('roadAsphaltMat', this.scene)
+    asphaltMat.diffuseColor = new Color3(0.22, 0.22, 0.22)
+    asphaltMat.specularColor = Color3.Black()
+
+    const sidewalkMat = new StandardMaterial('roadSidewalkMat', this.scene)
+    sidewalkMat.diffuseColor = SIDEWALK_COLOR
+    sidewalkMat.specularColor = Color3.Black()
+
+    const markMat = new StandardMaterial('laneMarkMat', this.scene)
+    markMat.diffuseColor = new Color3(1, 1, 1)
+    markMat.emissiveColor = new Color3(0.5, 0.5, 0.5)
+    markMat.specularColor = Color3.Black()
+
+    for (const tier of ['local', 'collector', 'arterial'] as RoadTier[]) {
+      const surfW = ROAD_SURFACE_WIDTH[tier]
+
+      // Road surface — oriented NS by default; EW instances rotate 90° around Y
+      const surface = MeshBuilder.CreateBox(
+        `roadSurface_${tier}`,
+        { width: surfW, height: ROAD_H, depth: CELL_LENGTH },
+        this.scene,
+      )
+      surface.material = asphaltMat
+      surface.isPickable = false
+      surface.setEnabled(false)
+      this.roadSurfaceSources.set(tier, surface)
+
+      // Intersection fill — full-cell square, no lane markings
+      const fill = MeshBuilder.CreateBox(
+        `intersectionFill_${tier}`,
+        { width: CELL_LENGTH, height: ROAD_H, depth: CELL_LENGTH },
+        this.scene,
+      )
+      fill.material = asphaltMat
+      fill.isPickable = false
+      fill.setEnabled(false)
+      this.intersectionFillSources.set(tier, fill)
+    }
+
+    // Sidewalk — shared across all tiers
+    this.sidewalkSource = MeshBuilder.CreateBox(
+      'sidewalkSource',
+      { width: SIDEWALK_WIDTH, height: ROAD_H, depth: CELL_LENGTH },
+      this.scene,
+    )
+    this.sidewalkSource.material = sidewalkMat
+    this.sidewalkSource.isPickable = false
+    this.sidewalkSource.setEnabled(false)
+
+    // Solid edge lane marking
+    this.laneMarkEdgeSource = MeshBuilder.CreateBox(
+      'laneMarkEdge',
+      { width: MARK_W, height: MARK_H, depth: MARK_EDGE_LENGTH },
+      this.scene,
+    )
+    this.laneMarkEdgeSource.material = markMat
+    this.laneMarkEdgeSource.isPickable = false
+    this.laneMarkEdgeSource.setEnabled(false)
+
+    // Single dash — instanced multiple times per cell for center line
+    this.laneMarkDashSource = MeshBuilder.CreateBox(
+      'laneMarkDash',
+      { width: MARK_W, height: MARK_H, depth: DASH_LENGTH },
+      this.scene,
+    )
+    this.laneMarkDashSource.material = markMat
+    this.laneMarkDashSource.isPickable = false
+    this.laneMarkDashSource.setEnabled(false)
+  }
+
+  // ─── Orientation & rebuild ───────────────────────────────────────────────────
+
+  private computeOrientation(cx: number, cz: number): RoadOrientation {
+    const hasN = isRoadCell(this.gridMap.get(cx, cz - 1))
+    const hasS = isRoadCell(this.gridMap.get(cx, cz + 1))
+    const hasE = isRoadCell(this.gridMap.get(cx + 1, cz))
+    const hasW = isRoadCell(this.gridMap.get(cx - 1, cz))
+    const hasNS = hasN || hasS
+    const hasEW = hasE || hasW
+    if (hasNS && hasEW) return 'INTERSECTION'
+    if (hasEW) return 'EW_STRAIGHT'
+    return 'NS_STRAIGHT'
+  }
+
+  private rebuildCellAndNeighbors(cx: number, cz: number): void {
+    this.rebuildCell(cx,     cz)
+    this.rebuildCell(cx - 1, cz)
+    this.rebuildCell(cx + 1, cz)
+    this.rebuildCell(cx,     cz - 1)
+    this.rebuildCell(cx,     cz + 1)
+  }
+
+  private rebuildCell(cx: number, cz: number): void {
+    const key = `${cx},${cz}`
+    const existing = this.roadCells.get(key)
+    if (existing) {
+      for (const inst of existing) inst.dispose()
+      this.roadCells.delete(key)
+    }
+    const cellType = this.gridMap.get(cx, cz)
+    if (!isRoadCell(cellType)) return
+    this.spawnComposedRoadMesh(cx, cz, this.cellTypeToTier(cellType))
+  }
+
+  private spawnComposedRoadMesh(cx: number, cz: number, tier: RoadTier): void {
+    const key = `${cx},${cz}`
+    const { x, z } = this.gridMap.cellToWorld(cx, cz)
+    const orientation = this.computeOrientation(cx, cz)
+    const isEW = orientation === 'EW_STRAIGHT'
+    const instances: InstancedMesh[] = []
+
+    if (orientation === 'INTERSECTION') {
+      const inst = this.intersectionFillSources.get(tier)!.createInstance(`int_${key}`)
+      inst.position.x = x
+      inst.position.y = ROAD_Y
+      inst.position.z = z
+      instances.push(inst)
+    } else {
+      // Road surface
+      const surf = this.roadSurfaceSources.get(tier)!.createInstance(`surf_${key}`)
+      surf.position.x = x
+      surf.position.y = ROAD_Y
+      surf.position.z = z
+      if (isEW) surf.rotation.y = Math.PI / 2
+      instances.push(surf)
+
+      // Sidewalks on each lateral side
+      for (const side of [-1, 1] as const) {
+        const sw = this.sidewalkSource.createInstance(`sw_${key}_${side}`)
+        sw.position.y = ROAD_Y
+        if (isEW) {
+          sw.position.x = x
+          sw.position.z = z + side * SIDEWALK_OFFSET
+          sw.rotation.y = Math.PI / 2
+        } else {
+          sw.position.x = x + side * SIDEWALK_OFFSET
+          sw.position.z = z
+        }
+        instances.push(sw)
+      }
+
+      // Solid edge lane markings
+      const halfSurf = ROAD_SURFACE_WIDTH[tier] / 2
+      for (const side of [-1, 1] as const) {
+        const edge = this.laneMarkEdgeSource.createInstance(`edge_${key}_${side}`)
+        edge.position.y = MARK_Y
+        if (isEW) {
+          edge.position.x = x
+          edge.position.z = z + side * halfSurf
+          edge.rotation.y = Math.PI / 2
+        } else {
+          edge.position.x = x + side * halfSurf
+          edge.position.z = z
+        }
+        instances.push(edge)
+      }
+
+      // Center dashed line (3 dashes per cell)
+      for (let i = 0; i < DASH_OFFSETS.length; i++) {
+        const dp = DASH_OFFSETS[i]
+        const dash = this.laneMarkDashSource.createInstance(`dash_${key}_${i}`)
+        dash.position.y = MARK_Y
+        if (isEW) {
+          dash.position.x = x + dp
+          dash.position.z = z
+          dash.rotation.y = Math.PI / 2
+        } else {
+          dash.position.x = x
+          dash.position.z = z + dp
+        }
+        instances.push(dash)
+      }
+
+      // Arterial: two additional dashed lane markings flanking center
+      if (tier === 'arterial') {
+        for (const laneOff of [-ARTERIAL_LANE_OFFSET, ARTERIAL_LANE_OFFSET]) {
+          for (let i = 0; i < DASH_OFFSETS.length; i++) {
+            const dp = DASH_OFFSETS[i]
+            const dash = this.laneMarkDashSource.createInstance(`artDash_${key}_${laneOff}_${i}`)
+            dash.position.y = MARK_Y
+            if (isEW) {
+              dash.position.x = x + dp
+              dash.position.z = z + laneOff
+              dash.rotation.y = Math.PI / 2
+            } else {
+              dash.position.x = x + laneOff
+              dash.position.z = z + dp
+            }
+            instances.push(dash)
+          }
+        }
+      }
+    }
+
+    this.roadCells.set(key, instances)
+  }
+
+  // ─── Preview meshes ──────────────────────────────────────────────────────────
 
   private initPreviewMeshes(): void {
     // Ghost road (semi-transparent blue — shows where road will be placed)
@@ -185,22 +416,7 @@ export class RoadGrid {
     this.snapIndicator.setEnabled(false)
   }
 
-  private createSourceMesh(tier: RoadTier): Mesh {
-    const mat = new StandardMaterial(`roadMat_${tier}`, this.scene)
-    mat.diffuseColor = TIER_COLOR[tier]
-    mat.specularColor = Color3.Black()
-
-    const [w, h, d] = TIER_DIMS[tier]
-    const mesh = MeshBuilder.CreateBox(
-      `roadSource_${tier}`,
-      { width: w, height: h, depth: d },
-      this.scene,
-    )
-    mesh.material = mat
-    mesh.isPickable = false
-    mesh.setEnabled(false)
-    return mesh
-  }
+  // ─── Pointer handling ────────────────────────────────────────────────────────
 
   private handlePointerEvent(info: PointerInfo): void {
     switch (info.type) {
@@ -390,12 +606,8 @@ export class RoadGrid {
     else if (current === CellType.ROAD_COLLECTOR) nextTier = 'arterial'
     if (!nextTier) return
 
-    const key = `${cx},${cz}`
-    const oldInst = this.roadInstances.get(key)
-    if (oldInst) { oldInst.dispose(); this.roadInstances.delete(key) }
-
     this.gridMap.set(cx, cz, TIER_CELL_TYPE[nextTier])
-    this.spawnRoadMesh(cx, cz, nextTier)
+    this.rebuildCellAndNeighbors(cx, cz)
     this._onRoadUpgradedCb?.()
     this._onRoadPlacedCb?.()
   }
@@ -410,7 +622,7 @@ export class RoadGrid {
     const roadNeighborCount = neighbors.filter(n => isRoadCell(this.gridMap.get(n.x, n.z))).length
 
     this.gridMap.set(cx, cz, TIER_CELL_TYPE[this.currentTier])
-    this.spawnRoadMesh(cx, cz, this.currentTier)
+    this.rebuildCellAndNeighbors(cx, cz)
     this._onRoadPlacedCb?.()
 
     if (roadNeighborCount >= 2) {
@@ -424,31 +636,19 @@ export class RoadGrid {
     return 'local'
   }
 
-  /** Recreates the road mesh for a saved cell without modifying GridMap. */
-  restoreAt(cx: number, cz: number): void {
-    const tier = this.cellTypeToTier(this.gridMap.get(cx, cz))
-    this.spawnRoadMesh(cx, cz, tier)
-  }
-
-  private spawnRoadMesh(cx: number, cz: number, tier: RoadTier): void {
-    const key = `${cx},${cz}`
-    if (this.roadInstances.has(key)) return
-    const { x, z } = this.gridMap.cellToWorld(cx, cz)
-    const source = this.sourceMeshes.get(tier)!
-    const instance = source.createInstance(`road_${key}`)
-    instance.position.x = x
-    instance.position.y = 0.03
-    instance.position.z = z
-    this.roadInstances.set(key, instance)
-  }
-
   dispose(): void {
     this.deactivate()
     this.clearGhost()
     this.ghostSourceMesh?.dispose()
     this.startIndicator?.dispose()
     this.snapIndicator?.dispose()
-    for (const inst of this.roadInstances.values()) inst.dispose()
-    for (const mesh of this.sourceMeshes.values()) mesh.dispose()
+    for (const instances of this.roadCells.values()) {
+      for (const inst of instances) inst.dispose()
+    }
+    for (const mesh of this.roadSurfaceSources.values()) mesh.dispose()
+    for (const mesh of this.intersectionFillSources.values()) mesh.dispose()
+    this.sidewalkSource?.dispose()
+    this.laneMarkEdgeSource?.dispose()
+    this.laneMarkDashSource?.dispose()
   }
 }

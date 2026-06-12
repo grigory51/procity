@@ -11,6 +11,7 @@ vi.mock('@babylonjs/core', () => {
       createInstance: vi.fn((iname: string) => ({
         name: iname,
         position: { x: 0, y: 0, z: 0 },
+        rotation: { x: 0, y: 0, z: 0 },
         dispose: vi.fn(),
       })),
       dispose: vi.fn(),
