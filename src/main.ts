@@ -2,7 +2,7 @@ import { GameEngine } from './engine'
 import { DemoScene, RoadGrid, ZoneManager, CitizenManager } from './game'
 import type { RoadTier } from './game/RoadGrid'
 import { GridMap, CellType, RoadGraph, EconomyManager, SimulationEngine, SaveSystem, isRoadCell } from './simulation'
-import { HUD, MiniMap, StatsPanel, ZoningToolbar, TutorialPanel, BuildingTooltip } from './ui'
+import { HUD, MiniMap, StatsPanel, BottomPanel, TutorialPanel, BuildingTooltip } from './ui'
 
 async function main(): Promise<void> {
   const canvas = document.getElementById('canvas') as HTMLCanvasElement
@@ -19,7 +19,7 @@ async function main(): Promise<void> {
   const sim           = new SimulationEngine()
 
   const hud        = new HUD()
-  const toolbar    = new ZoningToolbar()
+  const toolbar    = new BottomPanel()
   const miniMap    = new MiniMap(gridMap, scene.camera)
   const statsPanel = new StatsPanel()
 
