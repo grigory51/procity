@@ -239,6 +239,64 @@ describe('CitizenManager daily cycle', () => {
   })
 })
 
+// ── Sidewalk offset ──────────────────────────────────────────────────────────
+
+describe('CitizenManager sidewalk offset', () => {
+  it('first citizen gets positive sideOffset', () => {
+    const { manager, gridMap } = makeManager()
+    buildTestCity(gridMap)
+    manager.update(0)
+    const c = (manager as any).citizens[0]
+    expect(c.sideOffset).toBe(0.3)
+  })
+
+  it('second citizen gets negative sideOffset (alternating)', () => {
+    const { manager, gridMap } = makeManager()
+    // Two residential zones sharing the same road so both can spawn
+    for (let x = 3; x <= 7; x++) gridMap.set(x, 5, CellType.ROAD)
+    gridMap.set(3, 4, CellType.ZONE_RESIDENTIAL)
+    gridMap.set(4, 4, CellType.ZONE_RESIDENTIAL)
+    gridMap.set(7, 6, CellType.ZONE_COMMERCIAL)
+    manager.update(0)
+    const citizens = (manager as any).citizens
+    expect(citizens.length).toBeGreaterThanOrEqual(2)
+    expect(citizens[0].sideOffset).toBe(0.3)
+    expect(citizens[1].sideOffset).toBe(-0.3)
+  })
+
+  it('moving citizen z-position is offset from road center for horizontal path', () => {
+    // Road is horizontal (z=5, x=3..7), so perpendicular is in the z-direction.
+    // sideOffset=0.3, pz=1 → citizen z = roadCenter.z + 0.3
+    const { manager, gridMap } = makeManager()
+    buildTestCity(gridMap)
+    manager.update(0)
+    const c = (manager as any).citizens[0]
+    const roadCenterZ = gridMap.cellToWorld(3, 5).z
+    expect(Math.abs(c.marker.position.z - roadCenterZ)).toBeCloseTo(Math.abs(c.sideOffset), 5)
+  })
+
+  it('dwell position retains sidewalk offset (not road center)', () => {
+    const { manager, gridMap } = makeManager()
+    buildTestCity(gridMap)
+    manager.update(0)
+    manager.update(1.5)  // → AtWork
+    const c = (manager as any).citizens[0]
+    expect(c.state).toBe(S_AT_WORK)
+    // Last path node is (7,5); perpendicular is still in z-direction.
+    const roadCenterZ = gridMap.cellToWorld(7, 5).z
+    expect(Math.abs(c.marker.position.z - roadCenterZ)).toBeCloseTo(Math.abs(c.sideOffset), 5)
+  })
+
+  it('citizen y position is 0.25 while commuting', () => {
+    const { manager, gridMap } = makeManager()
+    buildTestCity(gridMap)
+    manager.update(0)
+    manager.update(0.2)  // partial commute
+    const c = (manager as any).citizens[0]
+    expect(c.marker.position.y).toBe(0.25)
+  })
+})
+
 // ── dispose ──────────────────────────────────────────────────────────────────
 
 describe('CitizenManager.dispose', () => {

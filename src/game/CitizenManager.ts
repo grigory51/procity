@@ -56,6 +56,7 @@ interface Citizen {
   readonly shopCell:        { x: number; z: number } | null
   readonly shopGoPath:      PathNode[] | null  // homeRoad → shopRoad
   readonly shopReturnPath:  PathNode[] | null  // shopRoad → homeRoad
+  readonly sideOffset:      number  // +0.3 or -0.3, alternating; lateral sidewalk offset
   state:        State
   pathProgress: number   // fractional node index [0 .. path.length-1]
   dwellTimer:   number   // seconds remaining in AtWork / AtHome / Shopping
@@ -251,7 +252,7 @@ export class CitizenManager {
     nextDwell: number,
   ): void {
     if (path.length < 2) {
-      this.arriveAt(c, nextState, nextDwell)
+      this.arriveAt(c, path, nextState, nextDwell)
       return
     }
 
@@ -260,7 +261,7 @@ export class CitizenManager {
 
     if (c.pathProgress >= maxProgress) {
       c.pathProgress = maxProgress
-      this.arriveAt(c, nextState, nextDwell)
+      this.arriveAt(c, path, nextState, nextDwell)
       return
     }
 
@@ -268,64 +269,77 @@ export class CitizenManager {
     const t   = c.pathProgress - idx
     const a   = this.gridMap.cellToWorld(path[idx].x,     path[idx].z)
     const b   = this.gridMap.cellToWorld(path[idx + 1].x, path[idx + 1].z)
-    c.marker.position.x = a.x + (b.x - a.x) * t
-    c.marker.position.z = a.z + (b.z - a.z) * t
+    const dx  = b.x - a.x
+    const dz  = b.z - a.z
+    const len = Math.sqrt(dx * dx + dz * dz)
+    const px  = len > 0 ? -dz / len : 0
+    const pz  = len > 0 ?  dx / len : 0
+    c.marker.position.x = a.x + (b.x - a.x) * t + c.sideOffset * px
+    c.marker.position.y = 0.25
+    c.marker.position.z = a.z + (b.z - a.z) * t + c.sideOffset * pz
   }
 
   private arriveAt(
     c:     Citizen,
+    path:  PathNode[],
     state: State.AtWork | State.AtHome | State.Shopping,
     dwell: number,
   ): void {
     c.state      = state
     c.dwellTimer = dwell
 
-    let cell: { x: number; z: number }
-    if (state === State.AtWork) {
-      cell = c.workCell
+    if (state === State.AtWork || state === State.AtHome) {
       c.marker.material = this.matStationary
-    } else if (state === State.Shopping) {
-      cell = c.shopCell!
-      c.marker.material = this.matShopping
     } else {
-      cell = c.homeCell
-      c.marker.material = this.matStationary
+      c.marker.material = this.matShopping
     }
 
-    const wp = this.gridMap.cellToWorld(cell.x, cell.z)
-    c.marker.position.x = wp.x
-    c.marker.position.z = wp.z
+    // Position at the last road node on the path, preserving sidewalk offset.
+    if (path.length >= 2) {
+      const { px, pz } = this._perpAtPathNode(path, path.length - 1)
+      const last = path[path.length - 1]
+      const wp   = this.gridMap.cellToWorld(last.x, last.z)
+      c.marker.position.x = wp.x + c.sideOffset * px
+      c.marker.position.y = 0.25
+      c.marker.position.z = wp.z + c.sideOffset * pz
+    }
   }
 
   private startNextCommute(c: Citizen): void {
-    const leavingWork  = c.state === State.AtWork
-    c.state            = leavingWork ? State.CommutingHome : State.CommutingToWork
-    c.pathProgress     = 0
-    c.marker.material  = this.matCommuting
-    const startNode    = leavingWork ? c.returnPath[0] : c.forwardPath[0]
-    const wp           = this.gridMap.cellToWorld(startNode.x, startNode.z)
-    c.marker.position.x = wp.x
-    c.marker.position.z = wp.z
+    const leavingWork = c.state === State.AtWork
+    c.state           = leavingWork ? State.CommutingHome : State.CommutingToWork
+    c.pathProgress    = 0
+    c.marker.material = this.matCommuting
+    const path        = leavingWork ? c.returnPath : c.forwardPath
+    const { px, pz }  = this._perpAtPathNode(path, 0)
+    const wp          = this.gridMap.cellToWorld(path[0].x, path[0].z)
+    c.marker.position.x = wp.x + c.sideOffset * px
+    c.marker.position.y = 0.25
+    c.marker.position.z = wp.z + c.sideOffset * pz
   }
 
   private startShoppingTrip(c: Citizen): void {
-    c.state             = State.CommutingToShop
-    c.pathProgress      = 0
-    c.marker.material   = this.matShopping
-    const startNode     = c.shopGoPath![0]
-    const wp            = this.gridMap.cellToWorld(startNode.x, startNode.z)
-    c.marker.position.x = wp.x
-    c.marker.position.z = wp.z
+    c.state           = State.CommutingToShop
+    c.pathProgress    = 0
+    c.marker.material = this.matShopping
+    const path        = c.shopGoPath!
+    const { px, pz }  = this._perpAtPathNode(path, 0)
+    const wp          = this.gridMap.cellToWorld(path[0].x, path[0].z)
+    c.marker.position.x = wp.x + c.sideOffset * px
+    c.marker.position.y = 0.25
+    c.marker.position.z = wp.z + c.sideOffset * pz
   }
 
   private startReturnFromShop(c: Citizen): void {
-    c.state             = State.CommutingFromShop
-    c.pathProgress      = 0
-    c.marker.material   = this.matShopping
-    const startNode     = c.shopReturnPath![0]
-    const wp            = this.gridMap.cellToWorld(startNode.x, startNode.z)
-    c.marker.position.x = wp.x
-    c.marker.position.z = wp.z
+    c.state           = State.CommutingFromShop
+    c.pathProgress    = 0
+    c.marker.material = this.matShopping
+    const path        = c.shopReturnPath!
+    const { px, pz }  = this._perpAtPathNode(path, 0)
+    const wp          = this.gridMap.cellToWorld(path[0].x, path[0].z)
+    c.marker.position.x = wp.x + c.sideOffset * px
+    c.marker.position.y = 0.25
+    c.marker.position.z = wp.z + c.sideOffset * pz
   }
 
   // ── Zone scan & citizen spawn ───────────────────────────────────────────────
@@ -370,9 +384,11 @@ export class CitizenManager {
 
       const shopInfo = this.findShopDestination(home, work, commercialZones)
 
+      const sideOffset  = (this.citizens.length % 2 === 0) ? 0.3 : -0.3
       const startWp     = this.gridMap.cellToWorld(path[0].x, path[0].z)
+      const { px, pz }  = this._perpAtPathNode(path, 0)
       const marker      = this.template.createInstance(`citizen_${this.nextInstanceId++}`)
-      marker.position   = new Vector3(startWp.x, 0.25, startWp.z)
+      marker.position   = new Vector3(startWp.x + sideOffset * px, 0.25, startWp.z + sideOffset * pz)
       marker.isPickable = false
 
       this.citizens.push({
@@ -383,6 +399,7 @@ export class CitizenManager {
         shopCell:       shopInfo?.shopCell ?? null,
         shopGoPath:     shopInfo?.shopGoPath ?? null,
         shopReturnPath: shopInfo?.shopReturnPath ?? null,
+        sideOffset,
         state:          State.CommutingToWork,
         pathProgress:   0,
         dwellTimer:     0,
@@ -418,6 +435,20 @@ export class CitizenManager {
       }
     }
     return null
+  }
+
+  /**
+   * Unit perpendicular to the road segment at `nodeIndex`.
+   * Uses the leaving segment at interior nodes and the arriving segment at the last node.
+   * Returns {px:0,pz:0} for degenerate single-node paths.
+   */
+  private _perpAtPathNode(path: PathNode[], nodeIndex: number): { px: number; pz: number } {
+    if (path.length < 2) return { px: 0, pz: 0 }
+    const from = nodeIndex < path.length - 1 ? nodeIndex : nodeIndex - 1
+    const dx   = path[from + 1].x - path[from].x
+    const dz   = path[from + 1].z - path[from].z
+    const len  = Math.sqrt(dx * dx + dz * dz)
+    return len > 0 ? { px: -dz / len, pz: dx / len } : { px: 0, pz: 0 }
   }
 
   /**
