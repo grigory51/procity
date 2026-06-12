@@ -257,13 +257,13 @@ describe('VehicleManager lane offset', () => {
     expect(diff).toBeCloseTo(0.18, 1)
   })
 
-  it('vehicle y position is 0.06 while commuting', () => {
+  it('vehicle y position is 0.11 while commuting', () => {
     const { manager, gridMap } = makeManager()
     buildTestCity(gridMap)
     manager.update(0)
     manager.update(0.1)
     const v = (manager as any).vehicles[0]
-    expect(v.marker.position.y).toBe(0.09)
+    expect(v.marker.position.y).toBe(0.11)
   })
 })
 
@@ -372,8 +372,8 @@ describe('VehicleManager follow-the-leader', () => {
     buildFollowCity(gridMap)
     manager.update(0)
 
-    const [v0, v1] = (manager as any).vehicles
-    // v1 starts 1 cell ahead → gap = 1.0 > FOLLOW_DIST (0.55) → full speed
+    const [v0] = (manager as any).vehicles
+    // leader starts 1 cell ahead → gap = 1.0 > FOLLOW_DIST (0.55) → full speed
     const sf = (manager as any).followSpeedFactor(v0, v0.forwardPath)
     expect(sf).toBe(1.0)
   })

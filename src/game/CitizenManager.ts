@@ -275,7 +275,7 @@ export class CitizenManager {
     const px  = len > 0 ? -dz / len : 0
     const pz  = len > 0 ?  dx / len : 0
     c.marker.position.x = a.x + (b.x - a.x) * t + c.sideOffset * px
-    c.marker.position.y = 0.09
+    c.marker.position.y = 0.11
     c.marker.position.z = a.z + (b.z - a.z) * t + c.sideOffset * pz
   }
 
@@ -300,7 +300,7 @@ export class CitizenManager {
       const last = path[path.length - 1]
       const wp   = this.gridMap.cellToWorld(last.x, last.z)
       c.marker.position.x = wp.x + c.sideOffset * px
-      c.marker.position.y = 0.09
+      c.marker.position.y = 0.11
       c.marker.position.z = wp.z + c.sideOffset * pz
     }
   }
@@ -314,7 +314,7 @@ export class CitizenManager {
     const { px, pz }  = this._perpAtPathNode(path, 0)
     const wp          = this.gridMap.cellToWorld(path[0].x, path[0].z)
     c.marker.position.x = wp.x + c.sideOffset * px
-    c.marker.position.y = 0.09
+    c.marker.position.y = 0.11
     c.marker.position.z = wp.z + c.sideOffset * pz
   }
 
@@ -326,7 +326,7 @@ export class CitizenManager {
     const { px, pz }  = this._perpAtPathNode(path, 0)
     const wp          = this.gridMap.cellToWorld(path[0].x, path[0].z)
     c.marker.position.x = wp.x + c.sideOffset * px
-    c.marker.position.y = 0.09
+    c.marker.position.y = 0.11
     c.marker.position.z = wp.z + c.sideOffset * pz
   }
 
@@ -338,7 +338,7 @@ export class CitizenManager {
     const { px, pz }  = this._perpAtPathNode(path, 0)
     const wp          = this.gridMap.cellToWorld(path[0].x, path[0].z)
     c.marker.position.x = wp.x + c.sideOffset * px
-    c.marker.position.y = 0.09
+    c.marker.position.y = 0.11
     c.marker.position.z = wp.z + c.sideOffset * pz
   }
 
@@ -388,7 +388,7 @@ export class CitizenManager {
       const startWp     = this.gridMap.cellToWorld(path[0].x, path[0].z)
       const { px, pz }  = this._perpAtPathNode(path, 0)
       const marker      = this.template.createInstance(`citizen_${this.nextInstanceId++}`)
-      marker.position   = new Vector3(startWp.x + sideOffset * px, 0.09, startWp.z + sideOffset * pz)
+      marker.position   = new Vector3(startWp.x + sideOffset * px, 0.11, startWp.z + sideOffset * pz)
       marker.isPickable = false
 
       this.citizens.push({

@@ -287,13 +287,13 @@ describe('CitizenManager sidewalk offset', () => {
     expect(Math.abs(c.marker.position.z - roadCenterZ)).toBeCloseTo(Math.abs(c.sideOffset), 5)
   })
 
-  it('citizen y position is 0.25 while commuting', () => {
+  it('citizen y position is 0.11 while commuting', () => {
     const { manager, gridMap } = makeManager()
     buildTestCity(gridMap)
     manager.update(0)
     manager.update(0.2)  // partial commute
     const c = (manager as any).citizens[0]
-    expect(c.marker.position.y).toBe(0.09)
+    expect(c.marker.position.y).toBe(0.11)
   })
 })
 
