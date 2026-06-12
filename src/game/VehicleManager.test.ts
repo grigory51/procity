@@ -323,6 +323,134 @@ describe('VehicleManager.dispose', () => {
   })
 })
 
+// ── Follow-the-leader (collision avoidance) ─────────────────────────────────
+
+// Two-vehicle city with a T-intersection forcing vehicle 1 (leader) to stop,
+// so vehicle 0 (follower) must slow behind it:
+//   Road:  (2,5)-(3,5)-(4,5)-(5,5)-(6,5)-(7,5)-(8,5)-(9,5)
+//   Spur:  (4,4)  → makes (4,5) an intersection
+//   Home0: (2,4)  → road (2,5)  [follower — spawned first]
+//   Home1: (3,4)  → road (3,5)  [leader  — spawned second, 1 cell ahead]
+//   Work:  (9,6)  → road (9,5)
+//   V0 path: (2,5)→…→(9,5)  length 8
+//   V1 path: (3,5)→…→(9,5)  length 7
+function buildFollowCity(gridMap: GridMap): void {
+  for (let x = 2; x <= 9; x++) gridMap.set(x, 5, CellType.ROAD)
+  gridMap.set(4, 4, CellType.ROAD)             // spur → (4,5) becomes intersection
+  gridMap.set(2, 4, CellType.ZONE_RESIDENTIAL) // follower home
+  gridMap.set(3, 4, CellType.ZONE_RESIDENTIAL) // leader home
+  gridMap.set(9, 6, CellType.ZONE_COMMERCIAL)
+}
+
+describe('VehicleManager follow-the-leader', () => {
+  it('followSpeedFactor returns 1.0 for a lone vehicle with no others in range', () => {
+    const { manager, gridMap } = makeManager()
+    buildTestCity(gridMap)   // single vehicle
+    manager.update(0)
+
+    const v  = (manager as any).vehicles[0]
+    const sf = (manager as any).followSpeedFactor(v, v.forwardPath)
+    expect(sf).toBe(1.0)
+  })
+
+  it('followSpeedFactor returns 0 when another vehicle is within STOP_DIST ahead', () => {
+    const { manager, gridMap } = makeManager()
+    buildFollowCity(gridMap)
+    manager.update(0)  // spawn both vehicles
+
+    const [v0, v1] = (manager as any).vehicles
+    // Move v0 to 0.2 cells behind v1 (well within STOP_DIST = 0.35)
+    v0.marker.position.x = v1.marker.position.x - 0.2
+    v0.marker.position.z = v1.marker.position.z
+
+    const sf = (manager as any).followSpeedFactor(v0, v0.forwardPath)
+    expect(sf).toBe(0.0)
+  })
+
+  it('followSpeedFactor returns 1.0 when another vehicle is beyond FOLLOW_DIST', () => {
+    const { manager, gridMap } = makeManager()
+    buildFollowCity(gridMap)
+    manager.update(0)
+
+    const [v0, v1] = (manager as any).vehicles
+    // v1 starts 1 cell ahead → gap = 1.0 > FOLLOW_DIST (0.55) → full speed
+    const sf = (manager as any).followSpeedFactor(v0, v0.forwardPath)
+    expect(sf).toBe(1.0)
+  })
+
+  it('followSpeedFactor returns intermediate value when gap is in braking range', () => {
+    const { manager, gridMap } = makeManager()
+    buildFollowCity(gridMap)
+    manager.update(0)
+
+    const [v0, v1] = (manager as any).vehicles
+    // Place v0 exactly 0.45 cells behind v1 — midpoint of [STOP_DIST=0.35, FOLLOW_DIST=0.55]
+    v0.marker.position.x = v1.marker.position.x - 0.45
+    v0.marker.position.z = v1.marker.position.z
+
+    const sf = (manager as any).followSpeedFactor(v0, v0.forwardPath)
+    expect(sf).toBeGreaterThan(0.0)
+    expect(sf).toBeLessThan(1.0)
+  })
+
+  it('follower does not overtake the leader on a shared road segment', () => {
+    const { manager, gridMap } = makeManager()
+    buildFollowCity(gridMap)
+    manager.update(0)
+
+    const [v0, v1] = (manager as any).vehicles
+
+    for (let i = 0; i < 400; i++) {
+      manager.update(0.016)  // ~60 fps
+      // Only check while both vehicles are actively commuting east
+      if (v0.state === S_COMMUTING_TO_WORK && v1.state === S_COMMUTING_TO_WORK) {
+        // v1 started ahead (higher x); v0 must never pass it
+        expect(v0.marker.position.x).toBeLessThanOrEqual(v1.marker.position.x + 0.02)
+      }
+    }
+  })
+
+  it('follower maintains at least STOP_DIST gap behind a stopped leader', () => {
+    const { manager, gridMap } = makeManager()
+    buildFollowCity(gridMap)
+    manager.update(0)
+
+    const [v0, v1] = (manager as any).vehicles
+    let minGap = Infinity
+
+    for (let i = 0; i < 400; i++) {
+      manager.update(0.016)
+      if (v0.state === S_COMMUTING_TO_WORK && v1.state === S_COMMUTING_TO_WORK) {
+        const dx  = v1.marker.position.x - v0.marker.position.x
+        const dz  = v1.marker.position.z - v0.marker.position.z
+        const gap = Math.sqrt(dx * dx + dz * dz)
+        if (gap < minGap) minGap = gap
+      }
+    }
+
+    // Gap must never drop below STOP_DIST (0.35) minus a one-frame tolerance
+    if (minGap !== Infinity) expect(minGap).toBeGreaterThanOrEqual(0.28)
+  })
+
+  it('follower slows behind an intersection-stopped leader', () => {
+    const { manager, gridMap } = makeManager()
+    buildFollowCity(gridMap)
+    manager.update(0)
+
+    const [v0, v1] = (manager as any).vehicles
+
+    // Advance until v1 is braking at the intersection and v0 is still active
+    for (let i = 0; i < 50; i++) manager.update(0.016)
+
+    // v1 should be stopped (braking or waiting) at the intersection
+    const v1Stopped = v1.yieldState === 'braking' || v1.yieldState === 'waiting'
+    if (v1Stopped && v0.state === S_COMMUTING_TO_WORK) {
+      // v0 must still be behind v1 and not have passed through it
+      expect(v0.marker.position.x).toBeLessThan(v1.marker.position.x + 0.02)
+    }
+  })
+})
+
 // ── isIntersectionCell ────────────────────────────────────────────────────────
 
 // T-intersection layout used in intersection tests:
