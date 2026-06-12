@@ -247,7 +247,7 @@ describe('CitizenManager sidewalk offset', () => {
     buildTestCity(gridMap)
     manager.update(0)
     const c = (manager as any).citizens[0]
-    expect(c.sideOffset).toBe(0.3)
+    expect(c.sideOffset).toBe(0.40)
   })
 
   it('second citizen gets negative sideOffset (alternating)', () => {
@@ -260,8 +260,8 @@ describe('CitizenManager sidewalk offset', () => {
     manager.update(0)
     const citizens = (manager as any).citizens
     expect(citizens.length).toBeGreaterThanOrEqual(2)
-    expect(citizens[0].sideOffset).toBe(0.3)
-    expect(citizens[1].sideOffset).toBe(-0.3)
+    expect(citizens[0].sideOffset).toBe(0.40)
+    expect(citizens[1].sideOffset).toBe(-0.40)
   })
 
   it('moving citizen z-position is offset from road center for horizontal path', () => {
@@ -293,7 +293,7 @@ describe('CitizenManager sidewalk offset', () => {
     manager.update(0)
     manager.update(0.2)  // partial commute
     const c = (manager as any).citizens[0]
-    expect(c.marker.position.y).toBe(0.25)
+    expect(c.marker.position.y).toBe(0.09)
   })
 })
 

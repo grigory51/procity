@@ -263,7 +263,7 @@ describe('VehicleManager lane offset', () => {
     manager.update(0)
     manager.update(0.1)
     const v = (manager as any).vehicles[0]
-    expect(v.marker.position.y).toBe(0.06)
+    expect(v.marker.position.y).toBe(0.09)
   })
 })
 

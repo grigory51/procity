@@ -21,6 +21,12 @@ const MAX_VEHICLES       = 50
 const ROAD_SEARCH_RADIUS = 8
 /** Right-lane lateral offset from road center (road center - perp * LANE_OFFSET). */
 const LANE_OFFSET        = 0.18
+/** Start braking when gap to vehicle ahead falls below this (world units). */
+const FOLLOW_DIST        = 0.55
+/** Full stop when gap to vehicle ahead falls below this (world units). */
+const STOP_DIST          = 0.35
+/** Max lateral separation to consider a vehicle "in our lane". */
+const LANE_WIDTH_HALF    = 0.26
 
 const DIRS: [number, number][] = [[1, 0], [-1, 0], [0, 1], [0, -1]]
 
@@ -174,7 +180,8 @@ export class VehicleManager {
     if (v.yieldState === 'resuming') v.yieldState = 'none'
 
     // ── Normal path advance ───────────────────────────────────────────────────
-    v.pathProgress += VEHICLE_SPEED * dt
+    const speedFactor = this.followSpeedFactor(v, path)
+    v.pathProgress += VEHICLE_SPEED * speedFactor * dt
     const maxProgress = path.length - 1
 
     if (v.pathProgress >= maxProgress) {
@@ -220,6 +227,50 @@ export class VehicleManager {
     v.marker.position.y = 0.09
     v.marker.position.z = a.z + (b.z - a.z) * t - perpZ * LANE_OFFSET * offsetScale
     v.marker.rotationQuaternion = Quaternion.RotationAxis(Vector3.Up(), Math.atan2(dirZ, dirX))
+  }
+
+  /**
+   * Compute a [0,1] speed multiplier for `v` based on the gap to the nearest
+   * vehicle directly ahead in the same lane.  Returns 0 (full stop) when the
+   * gap is at or below STOP_DIST, 1 (full speed) when at or above FOLLOW_DIST,
+   * and linearly interpolates between the two thresholds.
+   *
+   * Only considers vehicles whose lateral offset from v's travel axis is within
+   * LANE_WIDTH_HALF, so oncoming traffic in the opposite lane is ignored.
+   */
+  private followSpeedFactor(v: Vehicle, path: PathNode[]): number {
+    const idx = Math.floor(v.pathProgress)
+    if (idx >= path.length - 1) return 1.0
+
+    const a = this.gridMap.cellToWorld(path[idx].x, path[idx].z)
+    const b = this.gridMap.cellToWorld(path[idx + 1].x, path[idx + 1].z)
+    const edx = b.x - a.x
+    const edz = b.z - a.z
+    const elen = Math.sqrt(edx * edx + edz * edz)
+    if (elen === 0) return 1.0
+    const dirX = edx / elen
+    const dirZ = edz / elen
+
+    const vx = v.marker.position.x
+    const vz = v.marker.position.z
+    let minGap = Infinity
+
+    for (const other of this.vehicles) {
+      if (other === v) continue
+      if (other.state !== State.CommutingToWork && other.state !== State.CommutingHome) continue
+
+      const ox = other.marker.position.x - vx
+      const oz = other.marker.position.z - vz
+      const forward = ox * dirX + oz * dirZ
+      if (forward <= 0) continue
+      const lateral = Math.abs(ox * (-dirZ) + oz * dirX)
+      if (lateral > LANE_WIDTH_HALF) continue
+      if (forward < minGap) minGap = forward
+    }
+
+    if (minGap <= STOP_DIST) return 0.0
+    if (minGap >= FOLLOW_DIST) return 1.0
+    return (minGap - STOP_DIST) / (FOLLOW_DIST - STOP_DIST)
   }
 
   /** Returns true when (cx,cz) has road neighbors on both axes (NS and EW). */
