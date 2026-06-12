@@ -5,6 +5,7 @@ import {
   HemisphericLight,
   Mesh,
   MeshBuilder,
+  PointerEventTypes,
   Scene,
   Vector3,
 } from '@babylonjs/core'
@@ -32,6 +33,31 @@ export class DemoScene {
     this.camera.upperRadiusLimit = 200        // maximum zoom out
     this.camera.wheelPrecision = 5            // scroll-to-zoom sensitivity
     this.camera.panningSensibility = 150      // right-click / two-finger pan
+
+    // Mac: Cmd+drag → rotation (same angular sensitivity as default left-drag)
+    let metaDragLast: { x: number; y: number } | null = null
+    scene.onPointerObservable.add((info) => {
+      const evt = info.event as PointerEvent
+      if (!evt.metaKey) {
+        metaDragLast = null
+        return
+      }
+      if (info.type === PointerEventTypes.POINTERDOWN) {
+        metaDragLast = { x: evt.clientX, y: evt.clientY }
+      } else if (info.type === PointerEventTypes.POINTERMOVE && metaDragLast !== null) {
+        const dx = evt.clientX - metaDragLast.x
+        const dy = evt.clientY - metaDragLast.y
+        this.camera.alpha -= dx / 1000
+        this.camera.beta -= dy / 1000
+        this.camera.beta = Math.max(
+          this.camera.lowerBetaLimit ?? 0.2,
+          Math.min(this.camera.upperBetaLimit ?? 1.45, this.camera.beta),
+        )
+        metaDragLast = { x: evt.clientX, y: evt.clientY }
+      } else if (info.type === PointerEventTypes.POINTERUP) {
+        metaDragLast = null
+      }
+    })
 
     // Ambient fill — cool sky tint above, warm ground fill below
     const ambient = new HemisphericLight('ambient', new Vector3(0, 1, 0), scene)
